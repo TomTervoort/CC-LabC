@@ -264,17 +264,24 @@ return_ (local : global) =
   ajs (- (length (params local) - 1)) .
   ret
   
+-- | Loads the values of the variables neccessary for the static link cache.  
 loadSLCache :: Syms -> CodeS
-loadSLCache (local : global) = let getters = [{-- ldc 0x424242 . --} get id global | id <- cacheVars local global]
-                                in composeList getters
-                                    . if null getters 
-                                       then id
-                                       else annote SP (-(length getters {-- * 2 --}) + 1) 0 "red" "SLCache"
-	   
+loadSLCache (local : global) = composeList getters
+                               . if null getters 
+                                  then id
+                                  else annote SP (-(length getters) + 1) 0 "red" "SLCache"
+ where getters = [get id global | id <- cacheVars local global]
+
+-- | Writes the contents of the static link cache, which should end one above the current SP, back
+--   to the corresponding variables. After having popped the cache, the value the SP pointed to 
+--   before is restored.
 unloadSLCache :: Syms -> CodeS
-unloadSLCache (local : global) = sts (-slSize)
-                                 . ajs (-slSize + 1)
- where slSize = length (cacheVars local global) -- * 2
+unloadSLCache (local : global) = ajs (-1)
+                                 . composeList setters
+                                 . lds (slSize + 1)
+                                 . annote SP 0 0 "cyan" "returned"
+ where slSize = length (cacheVars local global)
+       setters = [set id global | id <- reverse $ cacheVars local global]
 
 cacheVars :: Env -> Syms -> [Ident]
 cacheVars local global = concatMap (map (filter isRequired . fst) . vars) global
