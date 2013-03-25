@@ -1,0 +1,9 @@
+function main ()
+{
+  print f (2, 3) ;
+}
+
+function f (x, y)
+{
+  return x + y ;
+}

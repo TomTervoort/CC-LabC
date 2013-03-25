@@ -1,0 +1,26 @@
+name:                  imp
+version:               0.0.4
+synopsis:              A compiler for a simple imperative language.
+description:           Project distribution for Mini Project C of the course on
+                       Compiler Constructionn (INFOMCCO) at Utrecht University.
+license:               AllRightsReserved
+license-file:          LICENSE
+category:              Compilers/Interpreters
+copyright:             (c) 2008 Utrecht University
+author:                Stefan Holdermans
+maintainer:            Stefan Holdermans <stefan@cs.uu.nl>
+stability:             provisional
+homepage:              http://www.cs.uu.nl/wiki/Cco/CourseSoftware
+tested-with:           GHC == 6.8.2, GHC == 6.8.3, GHC == 6.10.1
+build-type:            Simple
+cabal-version:         >= 1.2
+extra-source-files:    AUTHORS, Makefile, src/CCO/Imp/AG.ag,
+                       src/CCO/Imp/AG/Base.ag,
+                       src/CCO/Imp/AG/CodeGeneration.ag
+
+executable impc
+  main-is:             ImpC.hs
+  build-depends:       base, cco >= 0.0.4
+  other-modules:       CCO.Imp, CCO.Imp.AG, CCO.Imp.Base, CCO.Imp.Lexer,
+                       CCO.Imp.Parser, CCO.Ssm
+  hs-source-dirs:      src

@@ -1,0 +1,8 @@
+function main ()
+{
+  var x ;
+  var y ;
+  x = 2 ;
+  y = 3 ;
+  print x + y + 4 ;
+}

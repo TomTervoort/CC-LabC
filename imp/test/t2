@@ -1,0 +1,23 @@
+function main ()
+{
+  print f (2, 3) ;
+}
+
+function f (x, y)
+{
+  var z ;
+  function g (a, b)
+  {
+    var c ;
+    function h (p, q)
+    {
+      var s ;
+      s = 6 ;
+      return x + y + z + a + c + p + s ;
+    }
+    c = 5 ;
+    return h (x, b) ;
+  }
+  z = 4 ;
+  return g (x, z) ;
+}

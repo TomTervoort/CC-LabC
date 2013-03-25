@@ -1,0 +1,42 @@
+-------------------------------------------------------------------------------
+-- Syntax
+-------------------------------------------------------------------------------
+
+{
+type Ident = String    -- ^ Type of identifiers.
+}
+
+data Prog
+  | TopLevelDecls  ds :: Decls
+
+data Decl
+  | VarDecl  x :: {Ident}
+  | FunDecl  f :: {Ident}  xs :: {[Ident]}  b :: Stmts
+
+data Stmt
+  | Empty
+  | Decl    d :: Decl
+  | Assign  x :: {Ident}  e :: Exp
+  | Call_   f :: {Ident}  es :: Exps
+  | Print   e :: Exp
+  | Return  e :: Exp
+  | If      e :: Exp  s1 :: Stmt  s2 :: Stmt
+  | Block   b :: Stmts
+
+data Exp
+  | Int     n :: {Int}
+  | False_
+  | True_
+  | Var     x :: {Ident}
+  | Call    f :: {Ident}  es :: Exps
+  | Add     e1 :: Exp  e2 :: Exp
+  | Sub     e1 :: Exp  e2 :: Exp
+  | Mul     e1 :: Exp  e2 :: Exp
+  | Div     e1 :: Exp  e2 :: Exp
+  | Lt      e1 :: Exp  e2 :: Exp
+  | Eq      e1 :: Exp  e2 :: Exp
+  | Gt      e1 :: Exp  e2 :: Exp
+
+type Decls = [Decl]
+type Stmts = [Stmt]
+type Exps  = [Exp]

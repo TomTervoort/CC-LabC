@@ -1,0 +1,18 @@
+-------------------------------------------------------------------------------
+-- |
+-- Module      :  CCO.Imp.AG
+-- Copyright   :  (c) 2008 Utrecht University
+-- License     :  All rights reserved
+--
+-- Maintainer  :  stefan@cs.uu.nl
+-- Stability   :  provisional
+-- Portability :  portable
+--
+-- Attribute grammar for a simple imperative language.
+--
+-------------------------------------------------------------------------------
+
+module {CCO.Imp.AG} {} {}
+
+include "AG/Base.ag"
+include "AG/CodeGeneration.ag"

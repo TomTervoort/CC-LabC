@@ -1,0 +1,279 @@
+imports
+{
+import CCO.Ssm hiding (Add, Sub, Mul, Div, Eq, Lt, Gt)
+import Prelude hiding (div)
+import Data.List (intersperse)
+
+import Debug.Trace
+}
+
+-------------------------------------------------------------------------------
+-- Labels
+-------------------------------------------------------------------------------
+
+-- Handing out fresh program-point labels where necessary.
+
+attr Decl Decls Stmt Stmts Exp Exps
+  inh labels :: {[Label]}
+  syn labels :: {[Label]}
+
+sem Prog | TopLevelDecls  ds .labels = [0 ..]
+
+sem Decl | FunDecl        loc.beginLabel = @lhs.labels !! 0
+                          loc.endLabel   = @lhs.labels !! 1
+                          b  .labels     = drop 2 @lhs.labels
+
+sem Stmt | If             loc.elseLabel  = @lhs.labels !! 0
+                          loc.fiLabel    = @lhs.labels !! 1
+                          e  .labels     = drop 2 @lhs.labels
+
+-------------------------------------------------------------------------------
+-- Offsets
+-------------------------------------------------------------------------------
+
+-- Calculating the mark-pointer relative offsets at which variables are to be
+-- allocated.
+
+attr Decl Decls Stmt Stmts
+  inh offset :: {Int}
+  syn offset :: {Int}
+
+sem Prog | TopLevelDecls    ds .offset = 1
+sem Decl | VarDecl          lhs.offset = @lhs.offset + 1
+         | FunDecl          b  .offset = 1
+sem Stmt | Block            lhs.offset = @lhs.offset
+
+-------------------------------------------------------------------------------
+-- Environments
+-------------------------------------------------------------------------------
+
+{
+-- | An environment maps identifiers to symbol descriptors.
+type Env = [(Ident, Sym)]
+
+-- | A symbol descriptor either describes a variable or a function symbol.
+-- For a variable, we store its offset relative to the mark pointer; for
+-- a function we store its begin label.
+data Sym = V Int | F Int
+
+-- | Restrict environments to a particular type of descriptor.
+vars   env = [entry | entry@(_, V _     ) <- env            ]
+funs   env = [entry | entry@(_, F _     ) <- env            ]
+params env = [entry | entry@(_, V offset) <- env, offset < 0]
+}
+
+-- For each block of statements or declarations, we construct a local
+-- environment.
+
+attr Decl Decls Stmt Stmts
+  syn env use {++} {[]} :: {Env}
+
+sem Decl | VarDecl  lhs.env = [(@x, V @lhs.offset    )]
+         | FunDecl  lhs.env = [(@f, F @loc.beginLabel)]
+
+sem Stmt | Block  lhs.env = []
+
+-- Furthermore, we construct a subenvironment for the parameters of a function.
+
+sem Decl | FunDecl
+  loc.params = zipWith (\x i -> (x, V i)) @xs [- (2 + length @xs) ..]
+
+-------------------------------------------------------------------------------
+-- Symbol tables
+-------------------------------------------------------------------------------
+
+{
+-- | A symbol table contains descriptors for each variable that is in scope at
+-- a certain program point.
+-- The table consists of levels of 'Env's reflecting the nesting of functions:
+-- * The head of the list of 'Env's corresponds to the innermost function scope
+--   and so it contains the descriptors of the symbols that are allocated
+--   relative to the current mark pointer.
+-- * To access the symbols described in the tail of the list, static links are
+--   to be followed.
+type Syms = [Env]
+}
+
+-- Symbol-table construction.
+
+attr Decl Decls Stmt Stmts Exp Exps
+  inh syms :: {Syms}
+
+sem Prog | TopLevelDecls  ds.syms = [@ds.env]
+sem Decl | FunDecl        b .syms = (@loc.params ++ @b.env) : @lhs.syms
+sem Stmt | Block          b .syms = let local : global = @lhs.syms
+                                    in  (local ++ @b.env) : global
+
+-------------------------------------------------------------------------------
+-- Minimal pretty printing of Exp for use in SSM annotations
+-------------------------------------------------------------------------------
+
+attr Exp
+  syn ann use {++} {""} :: {String}
+attr Exps
+  syn anns :: {[String]}
+
+sem Exp | Int     loc.ann = show @n
+        | False_  loc.ann = "False"
+        | True_   loc.ann = "True"
+        | Var     loc.ann = @x
+        | Call    loc.ann = @f ++ "(" ++ concat (intersperse "," @es.anns) ++ ")"
+        | Add     loc.ann = @e1.ann ++ "+"  ++ @e2.ann
+        | Sub     loc.ann = @e1.ann ++ "-"  ++ @e2.ann
+        | Mul     loc.ann = @e1.ann ++ "*"  ++ @e2.ann
+        | Div     loc.ann = @e1.ann ++ "/"  ++ @e2.ann
+        | Lt      loc.ann = @e1.ann ++ "<"  ++ @e2.ann
+        | Eq      loc.ann = @e1.ann ++ "==" ++ @e2.ann
+        | Gt      loc.ann = @e1.ann ++ ">"  ++ @e2.ann
+
+sem Exps | Nil    lhs.anns = []
+         | Cons   lhs.anns = @hd.ann : @tl.anns
+
+sem Exp | *       loc.annote = annote SP 0 0 "green" @ann
+
+-------------------------------------------------------------------------------
+-- Code generation
+-------------------------------------------------------------------------------
+
+attr Decl Decls Stmt Stmts Exp Exps
+  syn codes use {.} {id} :: {CodeS}
+
+sem Prog | TopLevelDecls  loc.codes = @ds.codes .
+                                      enter @ds.env .
+                                      call "main" [@ds.env] .
+                                      ajs (- 1) .
+                                      exit @ds.env
+
+sem Decl | FunDecl  lhs.codes = bra @loc.endLabel .
+                                label @loc.beginLabel .
+                                  ldr MP .
+                                  ldrr MP SP .
+                                  enterparams @loc.params .
+                                  enter @b.env .
+                                  @b.codes .
+                                  exit @b.env .
+                                  ldc 0 .
+                                  return_ (@loc.params : @lhs.syms) .
+                                label @loc.endLabel
+
+sem Stmt | Assign  lhs.codes = @e.codes . set @x @lhs.syms
+         | Call_   lhs.codes = @es.codes .
+                               call @f @lhs.syms .
+                               ajs (- 1)
+         | Print   lhs.codes = @e.codes . trap 0
+         | Return  lhs.codes = @e.codes . return_ @lhs.syms
+         | If      lhs.codes = @e.codes .
+                               brf @loc.elseLabel .
+                               @s1.codes .
+                               bra @loc.fiLabel .
+                               label @loc.elseLabel .
+                                 @s2.codes .
+                               label @loc.fiLabel
+         | Block   lhs.codes = enter @b.env .
+                               @b.codes .
+                               exit @b.env
+
+sem Exp | Int     lhs.codes = ldc @n . @annote
+        | False_  lhs.codes = ldc 0 . @annote
+        | True_   lhs.codes = ldc 1 . @annote
+        | Var     lhs.codes = get @x @lhs.syms . @annote
+        | Call    lhs.codes = @es.codes . call @f @lhs.syms
+        | Add     lhs.codes = @e1.codes . @e2.codes . add . @annote
+        | Sub     lhs.codes = @e1.codes . @e2.codes . sub . @annote
+        | Mul     lhs.codes = @e1.codes . @e2.codes . mul . @annote
+        | Div     lhs.codes = @e1.codes . @e2.codes . div . @annote
+        | Lt      lhs.codes = @e1.codes . @e2.codes . lt . @annote
+        | Eq      lhs.codes = @e1.codes . @e2.codes . eq . @annote
+        | Gt      lhs.codes = @e1.codes . @e2.codes . gt . @annote
+
+attr Prog
+  syn code :: {Code}
+
+sem Prog | TopLevelDecls  lhs.code = Code (@loc.codes [])
+
+-------------------------------------------------------------------------------
+-- Auxiliary code-generation functions
+-------------------------------------------------------------------------------
+
+{
+
+composeList :: [a -> a] -> a -> a
+composeList = foldr (.) id
+
+-- | Produces code for annotating parameters.
+enterparams :: Env -> CodeS
+enterparams env = composeList [annote MP off off "green" (x ++ " (param)") | (x, V off) <- env]
+
+-- | Produces code for entering a block.
+enter :: Env -> CodeS
+enter env = composeList [ldc 0 . annote SP 0 0 "green" (x ++ " (var)") | (x, V _) <- env]
+
+-- | Produces code for exiting a block.
+exit :: Env -> CodeS
+exit env = ajs (- length (vars env))
+
+-- | Produces code for retrieving the value of a variable.
+get :: Ident -> Syms -> CodeS
+get x (local : global) = case lookup x (vars local) of
+  Nothing         -> ldl (- 2) . getGlobal x global
+  Just (V offset) -> ldl offset
+
+-- | Produces code for retrieving the value of a global variable.
+getGlobal :: Ident -> Syms -> CodeS
+getGlobal x []           = error ("unknown variable: " ++ x)
+getGlobal x (env : envs) = case lookup x (vars env) of
+  Nothing         -> lda (- 2) . getGlobal x envs
+  Just (V offset) -> lda offset
+
+-- | Produces code for assigning a new value to a variable.
+set :: Ident -> Syms -> CodeS
+set x (local : global) = case lookup x (vars local) of
+  Nothing         -> ldl (- 2) . setGlobal x global
+  Just (V offset) -> stl offset
+
+-- | Produces code for assigning a new value to a global variable.
+setGlobal :: Ident -> Syms -> CodeS
+setGlobal x []           = error ("unknown variable: " ++ x)
+setGlobal x (env : envs) = case lookup x (vars env) of
+  Nothing         -> lda (- 2) . setGlobal x envs
+  Just (V offset) -> sta offset
+
+-- | Produces code for calling a function.
+call :: Ident -> Syms -> CodeS
+call f (local : global) = case lookup f (funs local) of
+  Nothing             -> ldl (- 2) . callGlobal f global
+  Just (F beginLabel) -> loadSLCache local global . ldr MP . ldcL beginLabel . jsr
+
+-- | Produces code for calling a global function.
+callGlobal :: Ident -> Syms -> CodeS
+callGlobal f []           = error ("unknown function: " ++ f)
+callGlobal f (env : envs) = case lookup f (funs env) of
+  Nothing             -> lda (- 2) . callGlobal f envs
+  Just (F beginLabel) -> {-- loadSLCache env envs . --} ldcL beginLabel . jsr
+
+-- | Produces code for returning from a function.
+return_ :: Syms -> CodeS
+return_ (local : global) =
+  sts (- (length (vars local) + 3)) .
+  ldrr SP MP .
+  str MP .
+  unloadSLCache local global .
+  sts (- length (params local)) .
+  ajs (- (length (params local) - 1)) .
+  ret
+  
+loadSLCache :: Env -> Syms -> CodeS
+loadSLCache local global = annote SP 0 0 "red" "loadSLCache"
+                            . ldc 0x424242
+                            . composeList [getGlobal id global | id <- cacheVars local global]
+	   
+unloadSLCache :: Env -> Syms -> CodeS
+unloadSLCache local global = id {-- annote SP 0 0 "red" "unloadSLCache" 
+                              . ajs (- length (cacheVars local global))
+                              . ajs (-1) --}
+
+cacheVars :: Env -> Syms -> [Ident]
+cacheVars local global = concatMap (map (filter isRequired . fst) . vars) global
+ where isRequired _ = True
+
+}

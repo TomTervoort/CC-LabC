@@ -1,0 +1,18 @@
+function main ()
+{
+  print mulfac (3) ;
+}
+
+function mulfac (x)
+{
+  var mulby ;
+  function fac (x)
+  {
+    if (x > 1)
+      return x * mulby * fac(x-1) ;
+    else
+      return 1 ;
+  }
+  mulby = 3 ;
+  return fac(x) ;
+}
