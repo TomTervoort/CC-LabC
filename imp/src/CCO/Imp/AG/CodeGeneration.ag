@@ -2,7 +2,7 @@ imports
 {
 import CCO.Ssm hiding (Add, Sub, Mul, Div, Eq, Lt, Gt)
 import Prelude hiding (div)
-import Data.List (intersperse)
+import Data.List (intersperse, findIndex)
 
 import Debug.Trace
 }
@@ -157,10 +157,10 @@ sem Decl | FunDecl  lhs.codes = bra @loc.endLabel .
                                 label @loc.endLabel
 
 sem Stmt | Assign  lhs.codes = @e.codes . set @x @lhs.syms
-         | Call_   lhs.codes = loadSLCache @lhs.syms .
+         | Call_   lhs.codes = loadSLCache @lhs.syms .    -- Prepare static-link cache.
                                @es.codes .
                                call @f @lhs.syms .
-                               unloadSLCache @lhs.syms .
+                               unwindSLCache @lhs.syms .  -- Now unwind it.
                                ajs (- 1)
          | Print   lhs.codes = @e.codes . trap 0
          | Return  lhs.codes = @e.codes . return_ @lhs.syms
@@ -179,7 +179,9 @@ sem Exp | Int     lhs.codes = ldc @n . @annote
         | False_  lhs.codes = ldc 0 . @annote
         | True_   lhs.codes = ldc 1 . @annote
         | Var     lhs.codes = get @x @lhs.syms . @annote
-        | Call    lhs.codes = loadSLCache @lhs.syms . @es.codes . call @f @lhs.syms . unloadSLCache @lhs.syms
+        | Call    lhs.codes = loadSLCache @lhs.syms              -- Prepare static-link cache.
+                                . @es.codes . call @f @lhs.syms 
+                                . unwindSLCache @lhs.syms        -- Unwind.
         | Add     lhs.codes = @e1.codes . @e2.codes . add . @annote
         | Sub     lhs.codes = @e1.codes . @e2.codes . sub . @annote
         | Mul     lhs.codes = @e1.codes . @e2.codes . mul . @annote
@@ -217,7 +219,7 @@ exit env = ajs (- length (vars env))
 -- | Produces code for retrieving the value of a variable.
 get :: Ident -> Syms -> CodeS
 get x (local : global) = case lookup x (vars local) of
-  Nothing         -> ldl (- 2) . getGlobal x global
+  Nothing         -> ldl (- 2) . getGlobal x global -- TODO: getCached x (local:global)
   Just (V offset) -> ldl offset
 
 -- | Produces code for retrieving the value of a global variable.
@@ -226,6 +228,18 @@ getGlobal x []           = error ("unknown variable: " ++ x)
 getGlobal x (env : envs) = case lookup x (vars env) of
   Nothing         -> lda (- 2) . getGlobal x envs
   Just (V offset) -> lda offset
+
+-- | Fetches the value of a global variable from the static-link cache. -- FIXME
+getCached :: Ident -> Syms -> CodeS
+getCached x []           = error $ "Unknown variable: " ++ x
+getCached x (env : envs) = case findIndex (== x) $ reverse $ cacheVars env envs of
+                            Nothing  -> error $ "Unknown variable: " ++ x -- getGlobal x envs
+                            Just off -> ldl (- length env - off)
+
+-- | Sets a global variable value in the static-link cache. When unwinding, the actual global will 
+--   be eventually updated. -- TODO
+setCached :: Ident -> Syms -> CodeS
+setCached = undefined
 
 -- | Produces code for assigning a new value to a variable.
 set :: Ident -> Syms -> CodeS
@@ -275,8 +289,8 @@ loadSLCache (local : global) = composeList getters
 -- | Writes the contents of the static link cache, which should end one above the current SP, back
 --   to the corresponding variables. After having popped the cache, the value the SP pointed to 
 --   before is restored.
-unloadSLCache :: Syms -> CodeS
-unloadSLCache (local : global) = ajs (-1)
+unwindSLCache :: Syms -> CodeS
+unwindSLCache (local : global) = ajs (-1)
                                  . composeList setters
                                  . lds (slSize + 1)
                                  . annote SP 0 0 "cyan" "returned"

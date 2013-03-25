@@ -7,7 +7,7 @@ module CCO.Imp.AG where
 
 import CCO.Ssm hiding (Add, Sub, Mul, Div, Eq, Lt, Gt)
 import Prelude hiding (div)
-import Data.List (intersperse)
+import Data.List (intersperse, findIndex)
 
 import Debug.Trace
 {-# LINE 14 "AG.hs" #-}
@@ -45,7 +45,7 @@ params env = [entry | entry@(_, V offset) <- env, offset < 0]
 type Syms = [Env]
 {-# LINE 47 "AG.hs" #-}
 
-{-# LINE 200 "./AG/CodeGeneration.ag" #-}
+{-# LINE 202 "./AG/CodeGeneration.ag" #-}
 
 
 composeList :: [a -> a] -> a -> a
@@ -66,7 +66,7 @@ exit env = ajs (- length (vars env))
 -- | Produces code for retrieving the value of a variable.
 get :: Ident -> Syms -> CodeS
 get x (local : global) = case lookup x (vars local) of
-  Nothing         -> ldl (- 2) . getGlobal x global
+  Nothing         -> ldl (- 2) . getGlobal x global -- TODO: getCached x (local:global)
   Just (V offset) -> ldl offset
 
 -- | Produces code for retrieving the value of a global variable.
@@ -75,6 +75,18 @@ getGlobal x []           = error ("unknown variable: " ++ x)
 getGlobal x (env : envs) = case lookup x (vars env) of
   Nothing         -> lda (- 2) . getGlobal x envs
   Just (V offset) -> lda offset
+
+-- | Fetches the value of a global variable from the static-link cache. -- FIXME
+getCached :: Ident -> Syms -> CodeS
+getCached x []           = error $ "Unknown variable: " ++ x
+getCached x (env : envs) = case findIndex (== x) $ reverse $ cacheVars env envs of
+                            Nothing  -> error $ "Unknown variable: " ++ x -- getGlobal x envs
+                            Just off -> ldl (- length env - off)
+
+-- | Sets a global variable value in the static-link cache. When unwinding, the actual global will 
+--   be eventually updated. -- TODO
+setCached :: Ident -> Syms -> CodeS
+setCached = undefined
 
 -- | Produces code for assigning a new value to a variable.
 set :: Ident -> Syms -> CodeS
@@ -124,8 +136,8 @@ loadSLCache (local : global) = composeList getters
 -- | Writes the contents of the static link cache, which should end one above the current SP, back
 --   to the corresponding variables. After having popped the cache, the value the SP pointed to 
 --   before is restored.
-unloadSLCache :: Syms -> CodeS
-unloadSLCache (local : global) = ajs (-1)
+unwindSLCache :: Syms -> CodeS
+unwindSLCache (local : global) = ajs (-1)
                                  . composeList setters
                                  . lds (slSize + 1)
                                  . annote SP 0 0 "cyan" "returned"
@@ -136,7 +148,7 @@ cacheVars :: Env -> Syms -> [Ident]
 cacheVars local global = concatMap (map (filter isRequired . fst) . vars) global
  where isRequired _ = True
 
-{-# LINE 140 "AG.hs" #-}
+{-# LINE 152 "AG.hs" #-}
 -- Decl --------------------------------------------------------
 data Decl  = FunDecl (Ident) (([Ident])) (Stmts ) 
            | VarDecl (Ident) 
@@ -182,37 +194,37 @@ sem_Decl_FunDecl f_ xs_ b_  =
               _beginLabel =
                   ({-# LINE 22 "./AG/CodeGeneration.ag" #-}
                    _lhsIlabels !! 0
-                   {-# LINE 186 "AG.hs" #-}
+                   {-# LINE 198 "AG.hs" #-}
                    )
               _endLabel =
                   ({-# LINE 23 "./AG/CodeGeneration.ag" #-}
                    _lhsIlabels !! 1
-                   {-# LINE 191 "AG.hs" #-}
+                   {-# LINE 203 "AG.hs" #-}
                    )
               _bOlabels =
                   ({-# LINE 24 "./AG/CodeGeneration.ag" #-}
                    drop 2 _lhsIlabels
-                   {-# LINE 196 "AG.hs" #-}
+                   {-# LINE 208 "AG.hs" #-}
                    )
               _bOoffset =
                   ({-# LINE 43 "./AG/CodeGeneration.ag" #-}
                    1
-                   {-# LINE 201 "AG.hs" #-}
+                   {-# LINE 213 "AG.hs" #-}
                    )
               _lhsOenv =
                   ({-# LINE 72 "./AG/CodeGeneration.ag" #-}
                    [(f_, F _beginLabel    )]
-                   {-# LINE 206 "AG.hs" #-}
+                   {-# LINE 218 "AG.hs" #-}
                    )
               _params =
                   ({-# LINE 79 "./AG/CodeGeneration.ag" #-}
                    zipWith (\x i -> (x, V i)) xs_ [- (2 + length xs_) ..]
-                   {-# LINE 211 "AG.hs" #-}
+                   {-# LINE 223 "AG.hs" #-}
                    )
               _bOsyms =
                   ({-# LINE 103 "./AG/CodeGeneration.ag" #-}
                    (_params     ++ _bIenv) : _lhsIsyms
-                   {-# LINE 216 "AG.hs" #-}
+                   {-# LINE 228 "AG.hs" #-}
                    )
               _lhsOcodes =
                   ({-# LINE 147 "./AG/CodeGeneration.ag" #-}
@@ -227,17 +239,17 @@ sem_Decl_FunDecl f_ xs_ b_  =
                      ldc 0 .
                      return_ (_params     : _lhsIsyms) .
                    label _endLabel
-                   {-# LINE 231 "AG.hs" #-}
+                   {-# LINE 243 "AG.hs" #-}
                    )
               _lhsOlabels =
                   ({-# LINE 18 "./AG/CodeGeneration.ag" #-}
                    _bIlabels
-                   {-# LINE 236 "AG.hs" #-}
+                   {-# LINE 248 "AG.hs" #-}
                    )
               _lhsOoffset =
                   ({-# LINE 39 "./AG/CodeGeneration.ag" #-}
                    _bIoffset
-                   {-# LINE 241 "AG.hs" #-}
+                   {-# LINE 253 "AG.hs" #-}
                    )
               ( _bIcodes,_bIenv,_bIlabels,_bIoffset) =
                   b_ _bOlabels _bOoffset _bOsyms 
@@ -255,22 +267,22 @@ sem_Decl_VarDecl x_  =
               _lhsOoffset =
                   ({-# LINE 42 "./AG/CodeGeneration.ag" #-}
                    _lhsIoffset + 1
-                   {-# LINE 259 "AG.hs" #-}
+                   {-# LINE 271 "AG.hs" #-}
                    )
               _lhsOenv =
                   ({-# LINE 71 "./AG/CodeGeneration.ag" #-}
                    [(x_, V _lhsIoffset    )]
-                   {-# LINE 264 "AG.hs" #-}
+                   {-# LINE 276 "AG.hs" #-}
                    )
               _lhsOcodes =
                   ({-# LINE 139 "./AG/CodeGeneration.ag" #-}
                    id
-                   {-# LINE 269 "AG.hs" #-}
+                   {-# LINE 281 "AG.hs" #-}
                    )
               _lhsOlabels =
                   ({-# LINE 18 "./AG/CodeGeneration.ag" #-}
                    _lhsIlabels
-                   {-# LINE 274 "AG.hs" #-}
+                   {-# LINE 286 "AG.hs" #-}
                    )
           in  ( _lhsOcodes,_lhsOenv,_lhsOlabels,_lhsOoffset)))
 -- Decls -------------------------------------------------------
@@ -321,52 +333,52 @@ sem_Decls_Cons hd_ tl_  =
               _lhsOcodes =
                   ({-# LINE 139 "./AG/CodeGeneration.ag" #-}
                    _hdIcodes . _tlIcodes
-                   {-# LINE 325 "AG.hs" #-}
+                   {-# LINE 337 "AG.hs" #-}
                    )
               _lhsOenv =
                   ({-# LINE 69 "./AG/CodeGeneration.ag" #-}
                    _hdIenv ++ _tlIenv
-                   {-# LINE 330 "AG.hs" #-}
+                   {-# LINE 342 "AG.hs" #-}
                    )
               _lhsOlabels =
                   ({-# LINE 18 "./AG/CodeGeneration.ag" #-}
                    _tlIlabels
-                   {-# LINE 335 "AG.hs" #-}
+                   {-# LINE 347 "AG.hs" #-}
                    )
               _lhsOoffset =
                   ({-# LINE 39 "./AG/CodeGeneration.ag" #-}
                    _tlIoffset
-                   {-# LINE 340 "AG.hs" #-}
+                   {-# LINE 352 "AG.hs" #-}
                    )
               _hdOlabels =
                   ({-# LINE 17 "./AG/CodeGeneration.ag" #-}
                    _lhsIlabels
-                   {-# LINE 345 "AG.hs" #-}
+                   {-# LINE 357 "AG.hs" #-}
                    )
               _hdOoffset =
                   ({-# LINE 38 "./AG/CodeGeneration.ag" #-}
                    _lhsIoffset
-                   {-# LINE 350 "AG.hs" #-}
+                   {-# LINE 362 "AG.hs" #-}
                    )
               _hdOsyms =
                   ({-# LINE 100 "./AG/CodeGeneration.ag" #-}
                    _lhsIsyms
-                   {-# LINE 355 "AG.hs" #-}
+                   {-# LINE 367 "AG.hs" #-}
                    )
               _tlOlabels =
                   ({-# LINE 17 "./AG/CodeGeneration.ag" #-}
                    _hdIlabels
-                   {-# LINE 360 "AG.hs" #-}
+                   {-# LINE 372 "AG.hs" #-}
                    )
               _tlOoffset =
                   ({-# LINE 38 "./AG/CodeGeneration.ag" #-}
                    _hdIoffset
-                   {-# LINE 365 "AG.hs" #-}
+                   {-# LINE 377 "AG.hs" #-}
                    )
               _tlOsyms =
                   ({-# LINE 100 "./AG/CodeGeneration.ag" #-}
                    _lhsIsyms
-                   {-# LINE 370 "AG.hs" #-}
+                   {-# LINE 382 "AG.hs" #-}
                    )
               ( _hdIcodes,_hdIenv,_hdIlabels,_hdIoffset) =
                   hd_ _hdOlabels _hdOoffset _hdOsyms 
@@ -385,22 +397,22 @@ sem_Decls_Nil  =
               _lhsOcodes =
                   ({-# LINE 139 "./AG/CodeGeneration.ag" #-}
                    id
-                   {-# LINE 389 "AG.hs" #-}
+                   {-# LINE 401 "AG.hs" #-}
                    )
               _lhsOenv =
                   ({-# LINE 69 "./AG/CodeGeneration.ag" #-}
                    []
-                   {-# LINE 394 "AG.hs" #-}
+                   {-# LINE 406 "AG.hs" #-}
                    )
               _lhsOlabels =
                   ({-# LINE 18 "./AG/CodeGeneration.ag" #-}
                    _lhsIlabels
-                   {-# LINE 399 "AG.hs" #-}
+                   {-# LINE 411 "AG.hs" #-}
                    )
               _lhsOoffset =
                   ({-# LINE 39 "./AG/CodeGeneration.ag" #-}
                    _lhsIoffset
-                   {-# LINE 404 "AG.hs" #-}
+                   {-# LINE 416 "AG.hs" #-}
                    )
           in  ( _lhsOcodes,_lhsOenv,_lhsOlabels,_lhsOoffset)))
 -- Exp ---------------------------------------------------------
@@ -477,47 +489,47 @@ sem_Exp_Add e1_ e2_  =
               _ann =
                   ({-# LINE 121 "./AG/CodeGeneration.ag" #-}
                    _e1Iann ++ "+"  ++ _e2Iann
-                   {-# LINE 481 "AG.hs" #-}
+                   {-# LINE 493 "AG.hs" #-}
                    )
               _annote =
                   ({-# LINE 132 "./AG/CodeGeneration.ag" #-}
                    annote SP 0 0 "green" _ann
-                   {-# LINE 486 "AG.hs" #-}
+                   {-# LINE 498 "AG.hs" #-}
                    )
               _lhsOcodes =
-                  ({-# LINE 183 "./AG/CodeGeneration.ag" #-}
+                  ({-# LINE 185 "./AG/CodeGeneration.ag" #-}
                    _e1Icodes . _e2Icodes . add . _annote
-                   {-# LINE 491 "AG.hs" #-}
+                   {-# LINE 503 "AG.hs" #-}
                    )
               _lhsOann =
                   ({-# LINE 112 "./AG/CodeGeneration.ag" #-}
                    _ann
-                   {-# LINE 496 "AG.hs" #-}
+                   {-# LINE 508 "AG.hs" #-}
                    )
               _lhsOlabels =
                   ({-# LINE 18 "./AG/CodeGeneration.ag" #-}
                    _e2Ilabels
-                   {-# LINE 501 "AG.hs" #-}
+                   {-# LINE 513 "AG.hs" #-}
                    )
               _e1Olabels =
                   ({-# LINE 17 "./AG/CodeGeneration.ag" #-}
                    _lhsIlabels
-                   {-# LINE 506 "AG.hs" #-}
+                   {-# LINE 518 "AG.hs" #-}
                    )
               _e1Osyms =
                   ({-# LINE 100 "./AG/CodeGeneration.ag" #-}
                    _lhsIsyms
-                   {-# LINE 511 "AG.hs" #-}
+                   {-# LINE 523 "AG.hs" #-}
                    )
               _e2Olabels =
                   ({-# LINE 17 "./AG/CodeGeneration.ag" #-}
                    _e1Ilabels
-                   {-# LINE 516 "AG.hs" #-}
+                   {-# LINE 528 "AG.hs" #-}
                    )
               _e2Osyms =
                   ({-# LINE 100 "./AG/CodeGeneration.ag" #-}
                    _lhsIsyms
-                   {-# LINE 521 "AG.hs" #-}
+                   {-# LINE 533 "AG.hs" #-}
                    )
               ( _e1Iann,_e1Icodes,_e1Ilabels) =
                   e1_ _e1Olabels _e1Osyms 
@@ -541,37 +553,39 @@ sem_Exp_Call f_ es_  =
               _ann =
                   ({-# LINE 120 "./AG/CodeGeneration.ag" #-}
                    f_ ++ "(" ++ concat (intersperse "," _esIanns) ++ ")"
-                   {-# LINE 545 "AG.hs" #-}
+                   {-# LINE 557 "AG.hs" #-}
                    )
               _annote =
                   ({-# LINE 132 "./AG/CodeGeneration.ag" #-}
                    annote SP 0 0 "green" _ann
-                   {-# LINE 550 "AG.hs" #-}
+                   {-# LINE 562 "AG.hs" #-}
                    )
               _lhsOcodes =
                   ({-# LINE 182 "./AG/CodeGeneration.ag" #-}
-                   loadSLCache _lhsIsyms . _esIcodes . call f_ _lhsIsyms . unloadSLCache _lhsIsyms
-                   {-# LINE 555 "AG.hs" #-}
+                   loadSLCache _lhsIsyms
+                     . _esIcodes . call f_ _lhsIsyms
+                     . unwindSLCache _lhsIsyms
+                   {-# LINE 569 "AG.hs" #-}
                    )
               _lhsOann =
                   ({-# LINE 112 "./AG/CodeGeneration.ag" #-}
                    _ann
-                   {-# LINE 560 "AG.hs" #-}
+                   {-# LINE 574 "AG.hs" #-}
                    )
               _lhsOlabels =
                   ({-# LINE 18 "./AG/CodeGeneration.ag" #-}
                    _esIlabels
-                   {-# LINE 565 "AG.hs" #-}
+                   {-# LINE 579 "AG.hs" #-}
                    )
               _esOlabels =
                   ({-# LINE 17 "./AG/CodeGeneration.ag" #-}
                    _lhsIlabels
-                   {-# LINE 570 "AG.hs" #-}
+                   {-# LINE 584 "AG.hs" #-}
                    )
               _esOsyms =
                   ({-# LINE 100 "./AG/CodeGeneration.ag" #-}
                    _lhsIsyms
-                   {-# LINE 575 "AG.hs" #-}
+                   {-# LINE 589 "AG.hs" #-}
                    )
               ( _esIanns,_esIcodes,_esIlabels) =
                   es_ _esOlabels _esOsyms 
@@ -598,47 +612,47 @@ sem_Exp_Div e1_ e2_  =
               _ann =
                   ({-# LINE 124 "./AG/CodeGeneration.ag" #-}
                    _e1Iann ++ "/"  ++ _e2Iann
-                   {-# LINE 602 "AG.hs" #-}
+                   {-# LINE 616 "AG.hs" #-}
                    )
               _annote =
                   ({-# LINE 132 "./AG/CodeGeneration.ag" #-}
                    annote SP 0 0 "green" _ann
-                   {-# LINE 607 "AG.hs" #-}
+                   {-# LINE 621 "AG.hs" #-}
                    )
               _lhsOcodes =
-                  ({-# LINE 186 "./AG/CodeGeneration.ag" #-}
+                  ({-# LINE 188 "./AG/CodeGeneration.ag" #-}
                    _e1Icodes . _e2Icodes . div . _annote
-                   {-# LINE 612 "AG.hs" #-}
+                   {-# LINE 626 "AG.hs" #-}
                    )
               _lhsOann =
                   ({-# LINE 112 "./AG/CodeGeneration.ag" #-}
                    _ann
-                   {-# LINE 617 "AG.hs" #-}
+                   {-# LINE 631 "AG.hs" #-}
                    )
               _lhsOlabels =
                   ({-# LINE 18 "./AG/CodeGeneration.ag" #-}
                    _e2Ilabels
-                   {-# LINE 622 "AG.hs" #-}
+                   {-# LINE 636 "AG.hs" #-}
                    )
               _e1Olabels =
                   ({-# LINE 17 "./AG/CodeGeneration.ag" #-}
                    _lhsIlabels
-                   {-# LINE 627 "AG.hs" #-}
+                   {-# LINE 641 "AG.hs" #-}
                    )
               _e1Osyms =
                   ({-# LINE 100 "./AG/CodeGeneration.ag" #-}
                    _lhsIsyms
-                   {-# LINE 632 "AG.hs" #-}
+                   {-# LINE 646 "AG.hs" #-}
                    )
               _e2Olabels =
                   ({-# LINE 17 "./AG/CodeGeneration.ag" #-}
                    _e1Ilabels
-                   {-# LINE 637 "AG.hs" #-}
+                   {-# LINE 651 "AG.hs" #-}
                    )
               _e2Osyms =
                   ({-# LINE 100 "./AG/CodeGeneration.ag" #-}
                    _lhsIsyms
-                   {-# LINE 642 "AG.hs" #-}
+                   {-# LINE 656 "AG.hs" #-}
                    )
               ( _e1Iann,_e1Icodes,_e1Ilabels) =
                   e1_ _e1Olabels _e1Osyms 
@@ -667,47 +681,47 @@ sem_Exp_Eq e1_ e2_  =
               _ann =
                   ({-# LINE 126 "./AG/CodeGeneration.ag" #-}
                    _e1Iann ++ "==" ++ _e2Iann
-                   {-# LINE 671 "AG.hs" #-}
+                   {-# LINE 685 "AG.hs" #-}
                    )
               _annote =
                   ({-# LINE 132 "./AG/CodeGeneration.ag" #-}
                    annote SP 0 0 "green" _ann
-                   {-# LINE 676 "AG.hs" #-}
+                   {-# LINE 690 "AG.hs" #-}
                    )
               _lhsOcodes =
-                  ({-# LINE 188 "./AG/CodeGeneration.ag" #-}
+                  ({-# LINE 190 "./AG/CodeGeneration.ag" #-}
                    _e1Icodes . _e2Icodes . eq . _annote
-                   {-# LINE 681 "AG.hs" #-}
+                   {-# LINE 695 "AG.hs" #-}
                    )
               _lhsOann =
                   ({-# LINE 112 "./AG/CodeGeneration.ag" #-}
                    _ann
-                   {-# LINE 686 "AG.hs" #-}
+                   {-# LINE 700 "AG.hs" #-}
                    )
               _lhsOlabels =
                   ({-# LINE 18 "./AG/CodeGeneration.ag" #-}
                    _e2Ilabels
-                   {-# LINE 691 "AG.hs" #-}
+                   {-# LINE 705 "AG.hs" #-}
                    )
               _e1Olabels =
                   ({-# LINE 17 "./AG/CodeGeneration.ag" #-}
                    _lhsIlabels
-                   {-# LINE 696 "AG.hs" #-}
+                   {-# LINE 710 "AG.hs" #-}
                    )
               _e1Osyms =
                   ({-# LINE 100 "./AG/CodeGeneration.ag" #-}
                    _lhsIsyms
-                   {-# LINE 701 "AG.hs" #-}
+                   {-# LINE 715 "AG.hs" #-}
                    )
               _e2Olabels =
                   ({-# LINE 17 "./AG/CodeGeneration.ag" #-}
                    _e1Ilabels
-                   {-# LINE 706 "AG.hs" #-}
+                   {-# LINE 720 "AG.hs" #-}
                    )
               _e2Osyms =
                   ({-# LINE 100 "./AG/CodeGeneration.ag" #-}
                    _lhsIsyms
-                   {-# LINE 711 "AG.hs" #-}
+                   {-# LINE 725 "AG.hs" #-}
                    )
               ( _e1Iann,_e1Icodes,_e1Ilabels) =
                   e1_ _e1Olabels _e1Osyms 
@@ -724,27 +738,27 @@ sem_Exp_False_  =
               _ann =
                   ({-# LINE 117 "./AG/CodeGeneration.ag" #-}
                    "False"
-                   {-# LINE 728 "AG.hs" #-}
+                   {-# LINE 742 "AG.hs" #-}
                    )
               _annote =
                   ({-# LINE 132 "./AG/CodeGeneration.ag" #-}
                    annote SP 0 0 "green" _ann
-                   {-# LINE 733 "AG.hs" #-}
+                   {-# LINE 747 "AG.hs" #-}
                    )
               _lhsOcodes =
                   ({-# LINE 179 "./AG/CodeGeneration.ag" #-}
                    ldc 0 . _annote
-                   {-# LINE 738 "AG.hs" #-}
+                   {-# LINE 752 "AG.hs" #-}
                    )
               _lhsOann =
                   ({-# LINE 112 "./AG/CodeGeneration.ag" #-}
                    _ann
-                   {-# LINE 743 "AG.hs" #-}
+                   {-# LINE 757 "AG.hs" #-}
                    )
               _lhsOlabels =
                   ({-# LINE 18 "./AG/CodeGeneration.ag" #-}
                    _lhsIlabels
-                   {-# LINE 748 "AG.hs" #-}
+                   {-# LINE 762 "AG.hs" #-}
                    )
           in  ( _lhsOann,_lhsOcodes,_lhsOlabels)))
 sem_Exp_Gt :: T_Exp  ->
@@ -769,47 +783,47 @@ sem_Exp_Gt e1_ e2_  =
               _ann =
                   ({-# LINE 127 "./AG/CodeGeneration.ag" #-}
                    _e1Iann ++ ">"  ++ _e2Iann
-                   {-# LINE 773 "AG.hs" #-}
+                   {-# LINE 787 "AG.hs" #-}
                    )
               _annote =
                   ({-# LINE 132 "./AG/CodeGeneration.ag" #-}
                    annote SP 0 0 "green" _ann
-                   {-# LINE 778 "AG.hs" #-}
+                   {-# LINE 792 "AG.hs" #-}
                    )
               _lhsOcodes =
-                  ({-# LINE 189 "./AG/CodeGeneration.ag" #-}
+                  ({-# LINE 191 "./AG/CodeGeneration.ag" #-}
                    _e1Icodes . _e2Icodes . gt . _annote
-                   {-# LINE 783 "AG.hs" #-}
+                   {-# LINE 797 "AG.hs" #-}
                    )
               _lhsOann =
                   ({-# LINE 112 "./AG/CodeGeneration.ag" #-}
                    _ann
-                   {-# LINE 788 "AG.hs" #-}
+                   {-# LINE 802 "AG.hs" #-}
                    )
               _lhsOlabels =
                   ({-# LINE 18 "./AG/CodeGeneration.ag" #-}
                    _e2Ilabels
-                   {-# LINE 793 "AG.hs" #-}
+                   {-# LINE 807 "AG.hs" #-}
                    )
               _e1Olabels =
                   ({-# LINE 17 "./AG/CodeGeneration.ag" #-}
                    _lhsIlabels
-                   {-# LINE 798 "AG.hs" #-}
+                   {-# LINE 812 "AG.hs" #-}
                    )
               _e1Osyms =
                   ({-# LINE 100 "./AG/CodeGeneration.ag" #-}
                    _lhsIsyms
-                   {-# LINE 803 "AG.hs" #-}
+                   {-# LINE 817 "AG.hs" #-}
                    )
               _e2Olabels =
                   ({-# LINE 17 "./AG/CodeGeneration.ag" #-}
                    _e1Ilabels
-                   {-# LINE 808 "AG.hs" #-}
+                   {-# LINE 822 "AG.hs" #-}
                    )
               _e2Osyms =
                   ({-# LINE 100 "./AG/CodeGeneration.ag" #-}
                    _lhsIsyms
-                   {-# LINE 813 "AG.hs" #-}
+                   {-# LINE 827 "AG.hs" #-}
                    )
               ( _e1Iann,_e1Icodes,_e1Ilabels) =
                   e1_ _e1Olabels _e1Osyms 
@@ -827,27 +841,27 @@ sem_Exp_Int n_  =
               _ann =
                   ({-# LINE 116 "./AG/CodeGeneration.ag" #-}
                    show n_
-                   {-# LINE 831 "AG.hs" #-}
+                   {-# LINE 845 "AG.hs" #-}
                    )
               _annote =
                   ({-# LINE 132 "./AG/CodeGeneration.ag" #-}
                    annote SP 0 0 "green" _ann
-                   {-# LINE 836 "AG.hs" #-}
+                   {-# LINE 850 "AG.hs" #-}
                    )
               _lhsOcodes =
                   ({-# LINE 178 "./AG/CodeGeneration.ag" #-}
                    ldc n_ . _annote
-                   {-# LINE 841 "AG.hs" #-}
+                   {-# LINE 855 "AG.hs" #-}
                    )
               _lhsOann =
                   ({-# LINE 112 "./AG/CodeGeneration.ag" #-}
                    _ann
-                   {-# LINE 846 "AG.hs" #-}
+                   {-# LINE 860 "AG.hs" #-}
                    )
               _lhsOlabels =
                   ({-# LINE 18 "./AG/CodeGeneration.ag" #-}
                    _lhsIlabels
-                   {-# LINE 851 "AG.hs" #-}
+                   {-# LINE 865 "AG.hs" #-}
                    )
           in  ( _lhsOann,_lhsOcodes,_lhsOlabels)))
 sem_Exp_Lt :: T_Exp  ->
@@ -872,47 +886,47 @@ sem_Exp_Lt e1_ e2_  =
               _ann =
                   ({-# LINE 125 "./AG/CodeGeneration.ag" #-}
                    _e1Iann ++ "<"  ++ _e2Iann
-                   {-# LINE 876 "AG.hs" #-}
+                   {-# LINE 890 "AG.hs" #-}
                    )
               _annote =
                   ({-# LINE 132 "./AG/CodeGeneration.ag" #-}
                    annote SP 0 0 "green" _ann
-                   {-# LINE 881 "AG.hs" #-}
+                   {-# LINE 895 "AG.hs" #-}
                    )
               _lhsOcodes =
-                  ({-# LINE 187 "./AG/CodeGeneration.ag" #-}
+                  ({-# LINE 189 "./AG/CodeGeneration.ag" #-}
                    _e1Icodes . _e2Icodes . lt . _annote
-                   {-# LINE 886 "AG.hs" #-}
+                   {-# LINE 900 "AG.hs" #-}
                    )
               _lhsOann =
                   ({-# LINE 112 "./AG/CodeGeneration.ag" #-}
                    _ann
-                   {-# LINE 891 "AG.hs" #-}
+                   {-# LINE 905 "AG.hs" #-}
                    )
               _lhsOlabels =
                   ({-# LINE 18 "./AG/CodeGeneration.ag" #-}
                    _e2Ilabels
-                   {-# LINE 896 "AG.hs" #-}
+                   {-# LINE 910 "AG.hs" #-}
                    )
               _e1Olabels =
                   ({-# LINE 17 "./AG/CodeGeneration.ag" #-}
                    _lhsIlabels
-                   {-# LINE 901 "AG.hs" #-}
+                   {-# LINE 915 "AG.hs" #-}
                    )
               _e1Osyms =
                   ({-# LINE 100 "./AG/CodeGeneration.ag" #-}
                    _lhsIsyms
-                   {-# LINE 906 "AG.hs" #-}
+                   {-# LINE 920 "AG.hs" #-}
                    )
               _e2Olabels =
                   ({-# LINE 17 "./AG/CodeGeneration.ag" #-}
                    _e1Ilabels
-                   {-# LINE 911 "AG.hs" #-}
+                   {-# LINE 925 "AG.hs" #-}
                    )
               _e2Osyms =
                   ({-# LINE 100 "./AG/CodeGeneration.ag" #-}
                    _lhsIsyms
-                   {-# LINE 916 "AG.hs" #-}
+                   {-# LINE 930 "AG.hs" #-}
                    )
               ( _e1Iann,_e1Icodes,_e1Ilabels) =
                   e1_ _e1Olabels _e1Osyms 
@@ -941,47 +955,47 @@ sem_Exp_Mul e1_ e2_  =
               _ann =
                   ({-# LINE 123 "./AG/CodeGeneration.ag" #-}
                    _e1Iann ++ "*"  ++ _e2Iann
-                   {-# LINE 945 "AG.hs" #-}
+                   {-# LINE 959 "AG.hs" #-}
                    )
               _annote =
                   ({-# LINE 132 "./AG/CodeGeneration.ag" #-}
                    annote SP 0 0 "green" _ann
-                   {-# LINE 950 "AG.hs" #-}
+                   {-# LINE 964 "AG.hs" #-}
                    )
               _lhsOcodes =
-                  ({-# LINE 185 "./AG/CodeGeneration.ag" #-}
+                  ({-# LINE 187 "./AG/CodeGeneration.ag" #-}
                    _e1Icodes . _e2Icodes . mul . _annote
-                   {-# LINE 955 "AG.hs" #-}
+                   {-# LINE 969 "AG.hs" #-}
                    )
               _lhsOann =
                   ({-# LINE 112 "./AG/CodeGeneration.ag" #-}
                    _ann
-                   {-# LINE 960 "AG.hs" #-}
+                   {-# LINE 974 "AG.hs" #-}
                    )
               _lhsOlabels =
                   ({-# LINE 18 "./AG/CodeGeneration.ag" #-}
                    _e2Ilabels
-                   {-# LINE 965 "AG.hs" #-}
+                   {-# LINE 979 "AG.hs" #-}
                    )
               _e1Olabels =
                   ({-# LINE 17 "./AG/CodeGeneration.ag" #-}
                    _lhsIlabels
-                   {-# LINE 970 "AG.hs" #-}
+                   {-# LINE 984 "AG.hs" #-}
                    )
               _e1Osyms =
                   ({-# LINE 100 "./AG/CodeGeneration.ag" #-}
                    _lhsIsyms
-                   {-# LINE 975 "AG.hs" #-}
+                   {-# LINE 989 "AG.hs" #-}
                    )
               _e2Olabels =
                   ({-# LINE 17 "./AG/CodeGeneration.ag" #-}
                    _e1Ilabels
-                   {-# LINE 980 "AG.hs" #-}
+                   {-# LINE 994 "AG.hs" #-}
                    )
               _e2Osyms =
                   ({-# LINE 100 "./AG/CodeGeneration.ag" #-}
                    _lhsIsyms
-                   {-# LINE 985 "AG.hs" #-}
+                   {-# LINE 999 "AG.hs" #-}
                    )
               ( _e1Iann,_e1Icodes,_e1Ilabels) =
                   e1_ _e1Olabels _e1Osyms 
@@ -1010,47 +1024,47 @@ sem_Exp_Sub e1_ e2_  =
               _ann =
                   ({-# LINE 122 "./AG/CodeGeneration.ag" #-}
                    _e1Iann ++ "-"  ++ _e2Iann
-                   {-# LINE 1014 "AG.hs" #-}
+                   {-# LINE 1028 "AG.hs" #-}
                    )
               _annote =
                   ({-# LINE 132 "./AG/CodeGeneration.ag" #-}
                    annote SP 0 0 "green" _ann
-                   {-# LINE 1019 "AG.hs" #-}
+                   {-# LINE 1033 "AG.hs" #-}
                    )
               _lhsOcodes =
-                  ({-# LINE 184 "./AG/CodeGeneration.ag" #-}
+                  ({-# LINE 186 "./AG/CodeGeneration.ag" #-}
                    _e1Icodes . _e2Icodes . sub . _annote
-                   {-# LINE 1024 "AG.hs" #-}
+                   {-# LINE 1038 "AG.hs" #-}
                    )
               _lhsOann =
                   ({-# LINE 112 "./AG/CodeGeneration.ag" #-}
                    _ann
-                   {-# LINE 1029 "AG.hs" #-}
+                   {-# LINE 1043 "AG.hs" #-}
                    )
               _lhsOlabels =
                   ({-# LINE 18 "./AG/CodeGeneration.ag" #-}
                    _e2Ilabels
-                   {-# LINE 1034 "AG.hs" #-}
+                   {-# LINE 1048 "AG.hs" #-}
                    )
               _e1Olabels =
                   ({-# LINE 17 "./AG/CodeGeneration.ag" #-}
                    _lhsIlabels
-                   {-# LINE 1039 "AG.hs" #-}
+                   {-# LINE 1053 "AG.hs" #-}
                    )
               _e1Osyms =
                   ({-# LINE 100 "./AG/CodeGeneration.ag" #-}
                    _lhsIsyms
-                   {-# LINE 1044 "AG.hs" #-}
+                   {-# LINE 1058 "AG.hs" #-}
                    )
               _e2Olabels =
                   ({-# LINE 17 "./AG/CodeGeneration.ag" #-}
                    _e1Ilabels
-                   {-# LINE 1049 "AG.hs" #-}
+                   {-# LINE 1063 "AG.hs" #-}
                    )
               _e2Osyms =
                   ({-# LINE 100 "./AG/CodeGeneration.ag" #-}
                    _lhsIsyms
-                   {-# LINE 1054 "AG.hs" #-}
+                   {-# LINE 1068 "AG.hs" #-}
                    )
               ( _e1Iann,_e1Icodes,_e1Ilabels) =
                   e1_ _e1Olabels _e1Osyms 
@@ -1067,27 +1081,27 @@ sem_Exp_True_  =
               _ann =
                   ({-# LINE 118 "./AG/CodeGeneration.ag" #-}
                    "True"
-                   {-# LINE 1071 "AG.hs" #-}
+                   {-# LINE 1085 "AG.hs" #-}
                    )
               _annote =
                   ({-# LINE 132 "./AG/CodeGeneration.ag" #-}
                    annote SP 0 0 "green" _ann
-                   {-# LINE 1076 "AG.hs" #-}
+                   {-# LINE 1090 "AG.hs" #-}
                    )
               _lhsOcodes =
                   ({-# LINE 180 "./AG/CodeGeneration.ag" #-}
                    ldc 1 . _annote
-                   {-# LINE 1081 "AG.hs" #-}
+                   {-# LINE 1095 "AG.hs" #-}
                    )
               _lhsOann =
                   ({-# LINE 112 "./AG/CodeGeneration.ag" #-}
                    _ann
-                   {-# LINE 1086 "AG.hs" #-}
+                   {-# LINE 1100 "AG.hs" #-}
                    )
               _lhsOlabels =
                   ({-# LINE 18 "./AG/CodeGeneration.ag" #-}
                    _lhsIlabels
-                   {-# LINE 1091 "AG.hs" #-}
+                   {-# LINE 1105 "AG.hs" #-}
                    )
           in  ( _lhsOann,_lhsOcodes,_lhsOlabels)))
 sem_Exp_Var :: Ident ->
@@ -1101,27 +1115,27 @@ sem_Exp_Var x_  =
               _ann =
                   ({-# LINE 119 "./AG/CodeGeneration.ag" #-}
                    x_
-                   {-# LINE 1105 "AG.hs" #-}
+                   {-# LINE 1119 "AG.hs" #-}
                    )
               _annote =
                   ({-# LINE 132 "./AG/CodeGeneration.ag" #-}
                    annote SP 0 0 "green" _ann
-                   {-# LINE 1110 "AG.hs" #-}
+                   {-# LINE 1124 "AG.hs" #-}
                    )
               _lhsOcodes =
                   ({-# LINE 181 "./AG/CodeGeneration.ag" #-}
                    get x_ _lhsIsyms . _annote
-                   {-# LINE 1115 "AG.hs" #-}
+                   {-# LINE 1129 "AG.hs" #-}
                    )
               _lhsOann =
                   ({-# LINE 112 "./AG/CodeGeneration.ag" #-}
                    _ann
-                   {-# LINE 1120 "AG.hs" #-}
+                   {-# LINE 1134 "AG.hs" #-}
                    )
               _lhsOlabels =
                   ({-# LINE 18 "./AG/CodeGeneration.ag" #-}
                    _lhsIlabels
-                   {-# LINE 1125 "AG.hs" #-}
+                   {-# LINE 1139 "AG.hs" #-}
                    )
           in  ( _lhsOann,_lhsOcodes,_lhsOlabels)))
 -- Exps --------------------------------------------------------
@@ -1165,37 +1179,37 @@ sem_Exps_Cons hd_ tl_  =
               _lhsOanns =
                   ({-# LINE 130 "./AG/CodeGeneration.ag" #-}
                    _hdIann : _tlIanns
-                   {-# LINE 1169 "AG.hs" #-}
+                   {-# LINE 1183 "AG.hs" #-}
                    )
               _lhsOcodes =
                   ({-# LINE 139 "./AG/CodeGeneration.ag" #-}
                    _hdIcodes . _tlIcodes
-                   {-# LINE 1174 "AG.hs" #-}
+                   {-# LINE 1188 "AG.hs" #-}
                    )
               _lhsOlabels =
                   ({-# LINE 18 "./AG/CodeGeneration.ag" #-}
                    _tlIlabels
-                   {-# LINE 1179 "AG.hs" #-}
+                   {-# LINE 1193 "AG.hs" #-}
                    )
               _hdOlabels =
                   ({-# LINE 17 "./AG/CodeGeneration.ag" #-}
                    _lhsIlabels
-                   {-# LINE 1184 "AG.hs" #-}
+                   {-# LINE 1198 "AG.hs" #-}
                    )
               _hdOsyms =
                   ({-# LINE 100 "./AG/CodeGeneration.ag" #-}
                    _lhsIsyms
-                   {-# LINE 1189 "AG.hs" #-}
+                   {-# LINE 1203 "AG.hs" #-}
                    )
               _tlOlabels =
                   ({-# LINE 17 "./AG/CodeGeneration.ag" #-}
                    _hdIlabels
-                   {-# LINE 1194 "AG.hs" #-}
+                   {-# LINE 1208 "AG.hs" #-}
                    )
               _tlOsyms =
                   ({-# LINE 100 "./AG/CodeGeneration.ag" #-}
                    _lhsIsyms
-                   {-# LINE 1199 "AG.hs" #-}
+                   {-# LINE 1213 "AG.hs" #-}
                    )
               ( _hdIann,_hdIcodes,_hdIlabels) =
                   hd_ _hdOlabels _hdOsyms 
@@ -1212,17 +1226,17 @@ sem_Exps_Nil  =
               _lhsOanns =
                   ({-# LINE 129 "./AG/CodeGeneration.ag" #-}
                    []
-                   {-# LINE 1216 "AG.hs" #-}
+                   {-# LINE 1230 "AG.hs" #-}
                    )
               _lhsOcodes =
                   ({-# LINE 139 "./AG/CodeGeneration.ag" #-}
                    id
-                   {-# LINE 1221 "AG.hs" #-}
+                   {-# LINE 1235 "AG.hs" #-}
                    )
               _lhsOlabels =
                   ({-# LINE 18 "./AG/CodeGeneration.ag" #-}
                    _lhsIlabels
-                   {-# LINE 1226 "AG.hs" #-}
+                   {-# LINE 1240 "AG.hs" #-}
                    )
           in  ( _lhsOanns,_lhsOcodes,_lhsOlabels)))
 -- Prog --------------------------------------------------------
@@ -1256,17 +1270,17 @@ sem_Prog_TopLevelDecls ds_  =
          _dsOlabels =
              ({-# LINE 20 "./AG/CodeGeneration.ag" #-}
               [0 ..]
-              {-# LINE 1260 "AG.hs" #-}
+              {-# LINE 1274 "AG.hs" #-}
               )
          _dsOoffset =
              ({-# LINE 41 "./AG/CodeGeneration.ag" #-}
               1
-              {-# LINE 1265 "AG.hs" #-}
+              {-# LINE 1279 "AG.hs" #-}
               )
          _dsOsyms =
              ({-# LINE 102 "./AG/CodeGeneration.ag" #-}
               [_dsIenv]
-              {-# LINE 1270 "AG.hs" #-}
+              {-# LINE 1284 "AG.hs" #-}
               )
          _codes =
              ({-# LINE 141 "./AG/CodeGeneration.ag" #-}
@@ -1275,12 +1289,12 @@ sem_Prog_TopLevelDecls ds_  =
               call "main" [_dsIenv] .
               ajs (- 1) .
               exit _dsIenv
-              {-# LINE 1279 "AG.hs" #-}
+              {-# LINE 1293 "AG.hs" #-}
               )
          _lhsOcode =
-             ({-# LINE 194 "./AG/CodeGeneration.ag" #-}
+             ({-# LINE 196 "./AG/CodeGeneration.ag" #-}
               Code (_codes     [])
-              {-# LINE 1284 "AG.hs" #-}
+              {-# LINE 1298 "AG.hs" #-}
               )
          ( _dsIcodes,_dsIenv,_dsIlabels,_dsIoffset) =
              ds_ _dsOlabels _dsOoffset _dsOsyms 
@@ -1345,32 +1359,32 @@ sem_Stmt_Assign x_ e_  =
               _lhsOcodes =
                   ({-# LINE 159 "./AG/CodeGeneration.ag" #-}
                    _eIcodes . set x_ _lhsIsyms
-                   {-# LINE 1349 "AG.hs" #-}
+                   {-# LINE 1363 "AG.hs" #-}
                    )
               _lhsOenv =
                   ({-# LINE 69 "./AG/CodeGeneration.ag" #-}
                    []
-                   {-# LINE 1354 "AG.hs" #-}
+                   {-# LINE 1368 "AG.hs" #-}
                    )
               _lhsOlabels =
                   ({-# LINE 18 "./AG/CodeGeneration.ag" #-}
                    _eIlabels
-                   {-# LINE 1359 "AG.hs" #-}
+                   {-# LINE 1373 "AG.hs" #-}
                    )
               _lhsOoffset =
                   ({-# LINE 39 "./AG/CodeGeneration.ag" #-}
                    _lhsIoffset
-                   {-# LINE 1364 "AG.hs" #-}
+                   {-# LINE 1378 "AG.hs" #-}
                    )
               _eOlabels =
                   ({-# LINE 17 "./AG/CodeGeneration.ag" #-}
                    _lhsIlabels
-                   {-# LINE 1369 "AG.hs" #-}
+                   {-# LINE 1383 "AG.hs" #-}
                    )
               _eOsyms =
                   ({-# LINE 100 "./AG/CodeGeneration.ag" #-}
                    _lhsIsyms
-                   {-# LINE 1374 "AG.hs" #-}
+                   {-# LINE 1388 "AG.hs" #-}
                    )
               ( _eIann,_eIcodes,_eIlabels) =
                   e_ _eOlabels _eOsyms 
@@ -1395,40 +1409,40 @@ sem_Stmt_Block b_  =
               _lhsOoffset =
                   ({-# LINE 44 "./AG/CodeGeneration.ag" #-}
                    _lhsIoffset
-                   {-# LINE 1399 "AG.hs" #-}
+                   {-# LINE 1413 "AG.hs" #-}
                    )
               _lhsOenv =
                   ({-# LINE 74 "./AG/CodeGeneration.ag" #-}
                    []
-                   {-# LINE 1404 "AG.hs" #-}
+                   {-# LINE 1418 "AG.hs" #-}
                    )
               _bOsyms =
                   ({-# LINE 104 "./AG/CodeGeneration.ag" #-}
                    let local : global = _lhsIsyms
                    in  (local ++ _bIenv) : global
-                   {-# LINE 1410 "AG.hs" #-}
+                   {-# LINE 1424 "AG.hs" #-}
                    )
               _lhsOcodes =
                   ({-# LINE 174 "./AG/CodeGeneration.ag" #-}
                    enter _bIenv .
                    _bIcodes .
                    exit _bIenv
-                   {-# LINE 1417 "AG.hs" #-}
+                   {-# LINE 1431 "AG.hs" #-}
                    )
               _lhsOlabels =
                   ({-# LINE 18 "./AG/CodeGeneration.ag" #-}
                    _bIlabels
-                   {-# LINE 1422 "AG.hs" #-}
+                   {-# LINE 1436 "AG.hs" #-}
                    )
               _bOlabels =
                   ({-# LINE 17 "./AG/CodeGeneration.ag" #-}
                    _lhsIlabels
-                   {-# LINE 1427 "AG.hs" #-}
+                   {-# LINE 1441 "AG.hs" #-}
                    )
               _bOoffset =
                   ({-# LINE 38 "./AG/CodeGeneration.ag" #-}
                    _lhsIoffset
-                   {-# LINE 1432 "AG.hs" #-}
+                   {-# LINE 1446 "AG.hs" #-}
                    )
               ( _bIcodes,_bIenv,_bIlabels,_bIoffset) =
                   b_ _bOlabels _bOoffset _bOsyms 
@@ -1454,34 +1468,34 @@ sem_Stmt_Call_ f_ es_  =
                    loadSLCache _lhsIsyms .
                    _esIcodes .
                    call f_ _lhsIsyms .
-                   unloadSLCache _lhsIsyms .
+                   unwindSLCache _lhsIsyms .
                    ajs (- 1)
-                   {-# LINE 1460 "AG.hs" #-}
+                   {-# LINE 1474 "AG.hs" #-}
                    )
               _lhsOenv =
                   ({-# LINE 69 "./AG/CodeGeneration.ag" #-}
                    []
-                   {-# LINE 1465 "AG.hs" #-}
+                   {-# LINE 1479 "AG.hs" #-}
                    )
               _lhsOlabels =
                   ({-# LINE 18 "./AG/CodeGeneration.ag" #-}
                    _esIlabels
-                   {-# LINE 1470 "AG.hs" #-}
+                   {-# LINE 1484 "AG.hs" #-}
                    )
               _lhsOoffset =
                   ({-# LINE 39 "./AG/CodeGeneration.ag" #-}
                    _lhsIoffset
-                   {-# LINE 1475 "AG.hs" #-}
+                   {-# LINE 1489 "AG.hs" #-}
                    )
               _esOlabels =
                   ({-# LINE 17 "./AG/CodeGeneration.ag" #-}
                    _lhsIlabels
-                   {-# LINE 1480 "AG.hs" #-}
+                   {-# LINE 1494 "AG.hs" #-}
                    )
               _esOsyms =
                   ({-# LINE 100 "./AG/CodeGeneration.ag" #-}
                    _lhsIsyms
-                   {-# LINE 1485 "AG.hs" #-}
+                   {-# LINE 1499 "AG.hs" #-}
                    )
               ( _esIanns,_esIcodes,_esIlabels) =
                   es_ _esOlabels _esOsyms 
@@ -1506,37 +1520,37 @@ sem_Stmt_Decl d_  =
               _lhsOcodes =
                   ({-# LINE 139 "./AG/CodeGeneration.ag" #-}
                    _dIcodes
-                   {-# LINE 1510 "AG.hs" #-}
+                   {-# LINE 1524 "AG.hs" #-}
                    )
               _lhsOenv =
                   ({-# LINE 69 "./AG/CodeGeneration.ag" #-}
                    _dIenv
-                   {-# LINE 1515 "AG.hs" #-}
+                   {-# LINE 1529 "AG.hs" #-}
                    )
               _lhsOlabels =
                   ({-# LINE 18 "./AG/CodeGeneration.ag" #-}
                    _dIlabels
-                   {-# LINE 1520 "AG.hs" #-}
+                   {-# LINE 1534 "AG.hs" #-}
                    )
               _lhsOoffset =
                   ({-# LINE 39 "./AG/CodeGeneration.ag" #-}
                    _dIoffset
-                   {-# LINE 1525 "AG.hs" #-}
+                   {-# LINE 1539 "AG.hs" #-}
                    )
               _dOlabels =
                   ({-# LINE 17 "./AG/CodeGeneration.ag" #-}
                    _lhsIlabels
-                   {-# LINE 1530 "AG.hs" #-}
+                   {-# LINE 1544 "AG.hs" #-}
                    )
               _dOoffset =
                   ({-# LINE 38 "./AG/CodeGeneration.ag" #-}
                    _lhsIoffset
-                   {-# LINE 1535 "AG.hs" #-}
+                   {-# LINE 1549 "AG.hs" #-}
                    )
               _dOsyms =
                   ({-# LINE 100 "./AG/CodeGeneration.ag" #-}
                    _lhsIsyms
-                   {-# LINE 1540 "AG.hs" #-}
+                   {-# LINE 1554 "AG.hs" #-}
                    )
               ( _dIcodes,_dIenv,_dIlabels,_dIoffset) =
                   d_ _dOlabels _dOoffset _dOsyms 
@@ -1553,22 +1567,22 @@ sem_Stmt_Empty  =
               _lhsOcodes =
                   ({-# LINE 139 "./AG/CodeGeneration.ag" #-}
                    id
-                   {-# LINE 1557 "AG.hs" #-}
+                   {-# LINE 1571 "AG.hs" #-}
                    )
               _lhsOenv =
                   ({-# LINE 69 "./AG/CodeGeneration.ag" #-}
                    []
-                   {-# LINE 1562 "AG.hs" #-}
+                   {-# LINE 1576 "AG.hs" #-}
                    )
               _lhsOlabels =
                   ({-# LINE 18 "./AG/CodeGeneration.ag" #-}
                    _lhsIlabels
-                   {-# LINE 1567 "AG.hs" #-}
+                   {-# LINE 1581 "AG.hs" #-}
                    )
               _lhsOoffset =
                   ({-# LINE 39 "./AG/CodeGeneration.ag" #-}
                    _lhsIoffset
-                   {-# LINE 1572 "AG.hs" #-}
+                   {-# LINE 1586 "AG.hs" #-}
                    )
           in  ( _lhsOcodes,_lhsOenv,_lhsOlabels,_lhsOoffset)))
 sem_Stmt_If :: T_Exp  ->
@@ -1605,17 +1619,17 @@ sem_Stmt_If e_ s1_ s2_  =
               _elseLabel =
                   ({-# LINE 26 "./AG/CodeGeneration.ag" #-}
                    _lhsIlabels !! 0
-                   {-# LINE 1609 "AG.hs" #-}
+                   {-# LINE 1623 "AG.hs" #-}
                    )
               _fiLabel =
                   ({-# LINE 27 "./AG/CodeGeneration.ag" #-}
                    _lhsIlabels !! 1
-                   {-# LINE 1614 "AG.hs" #-}
+                   {-# LINE 1628 "AG.hs" #-}
                    )
               _eOlabels =
                   ({-# LINE 28 "./AG/CodeGeneration.ag" #-}
                    drop 2 _lhsIlabels
-                   {-# LINE 1619 "AG.hs" #-}
+                   {-# LINE 1633 "AG.hs" #-}
                    )
               _lhsOcodes =
                   ({-# LINE 167 "./AG/CodeGeneration.ag" #-}
@@ -1626,57 +1640,57 @@ sem_Stmt_If e_ s1_ s2_  =
                    label _elseLabel     .
                      _s2Icodes .
                    label _fiLabel
-                   {-# LINE 1630 "AG.hs" #-}
+                   {-# LINE 1644 "AG.hs" #-}
                    )
               _lhsOenv =
                   ({-# LINE 69 "./AG/CodeGeneration.ag" #-}
                    _s1Ienv ++ _s2Ienv
-                   {-# LINE 1635 "AG.hs" #-}
+                   {-# LINE 1649 "AG.hs" #-}
                    )
               _lhsOlabels =
                   ({-# LINE 18 "./AG/CodeGeneration.ag" #-}
                    _s2Ilabels
-                   {-# LINE 1640 "AG.hs" #-}
+                   {-# LINE 1654 "AG.hs" #-}
                    )
               _lhsOoffset =
                   ({-# LINE 39 "./AG/CodeGeneration.ag" #-}
                    _s2Ioffset
-                   {-# LINE 1645 "AG.hs" #-}
+                   {-# LINE 1659 "AG.hs" #-}
                    )
               _eOsyms =
                   ({-# LINE 100 "./AG/CodeGeneration.ag" #-}
                    _lhsIsyms
-                   {-# LINE 1650 "AG.hs" #-}
+                   {-# LINE 1664 "AG.hs" #-}
                    )
               _s1Olabels =
                   ({-# LINE 17 "./AG/CodeGeneration.ag" #-}
                    _eIlabels
-                   {-# LINE 1655 "AG.hs" #-}
+                   {-# LINE 1669 "AG.hs" #-}
                    )
               _s1Ooffset =
                   ({-# LINE 38 "./AG/CodeGeneration.ag" #-}
                    _lhsIoffset
-                   {-# LINE 1660 "AG.hs" #-}
+                   {-# LINE 1674 "AG.hs" #-}
                    )
               _s1Osyms =
                   ({-# LINE 100 "./AG/CodeGeneration.ag" #-}
                    _lhsIsyms
-                   {-# LINE 1665 "AG.hs" #-}
+                   {-# LINE 1679 "AG.hs" #-}
                    )
               _s2Olabels =
                   ({-# LINE 17 "./AG/CodeGeneration.ag" #-}
                    _s1Ilabels
-                   {-# LINE 1670 "AG.hs" #-}
+                   {-# LINE 1684 "AG.hs" #-}
                    )
               _s2Ooffset =
                   ({-# LINE 38 "./AG/CodeGeneration.ag" #-}
                    _s1Ioffset
-                   {-# LINE 1675 "AG.hs" #-}
+                   {-# LINE 1689 "AG.hs" #-}
                    )
               _s2Osyms =
                   ({-# LINE 100 "./AG/CodeGeneration.ag" #-}
                    _lhsIsyms
-                   {-# LINE 1680 "AG.hs" #-}
+                   {-# LINE 1694 "AG.hs" #-}
                    )
               ( _eIann,_eIcodes,_eIlabels) =
                   e_ _eOlabels _eOsyms 
@@ -1703,32 +1717,32 @@ sem_Stmt_Print e_  =
               _lhsOcodes =
                   ({-# LINE 165 "./AG/CodeGeneration.ag" #-}
                    _eIcodes . trap 0
-                   {-# LINE 1707 "AG.hs" #-}
+                   {-# LINE 1721 "AG.hs" #-}
                    )
               _lhsOenv =
                   ({-# LINE 69 "./AG/CodeGeneration.ag" #-}
                    []
-                   {-# LINE 1712 "AG.hs" #-}
+                   {-# LINE 1726 "AG.hs" #-}
                    )
               _lhsOlabels =
                   ({-# LINE 18 "./AG/CodeGeneration.ag" #-}
                    _eIlabels
-                   {-# LINE 1717 "AG.hs" #-}
+                   {-# LINE 1731 "AG.hs" #-}
                    )
               _lhsOoffset =
                   ({-# LINE 39 "./AG/CodeGeneration.ag" #-}
                    _lhsIoffset
-                   {-# LINE 1722 "AG.hs" #-}
+                   {-# LINE 1736 "AG.hs" #-}
                    )
               _eOlabels =
                   ({-# LINE 17 "./AG/CodeGeneration.ag" #-}
                    _lhsIlabels
-                   {-# LINE 1727 "AG.hs" #-}
+                   {-# LINE 1741 "AG.hs" #-}
                    )
               _eOsyms =
                   ({-# LINE 100 "./AG/CodeGeneration.ag" #-}
                    _lhsIsyms
-                   {-# LINE 1732 "AG.hs" #-}
+                   {-# LINE 1746 "AG.hs" #-}
                    )
               ( _eIann,_eIcodes,_eIlabels) =
                   e_ _eOlabels _eOsyms 
@@ -1751,32 +1765,32 @@ sem_Stmt_Return e_  =
               _lhsOcodes =
                   ({-# LINE 166 "./AG/CodeGeneration.ag" #-}
                    _eIcodes . return_ _lhsIsyms
-                   {-# LINE 1755 "AG.hs" #-}
+                   {-# LINE 1769 "AG.hs" #-}
                    )
               _lhsOenv =
                   ({-# LINE 69 "./AG/CodeGeneration.ag" #-}
                    []
-                   {-# LINE 1760 "AG.hs" #-}
+                   {-# LINE 1774 "AG.hs" #-}
                    )
               _lhsOlabels =
                   ({-# LINE 18 "./AG/CodeGeneration.ag" #-}
                    _eIlabels
-                   {-# LINE 1765 "AG.hs" #-}
+                   {-# LINE 1779 "AG.hs" #-}
                    )
               _lhsOoffset =
                   ({-# LINE 39 "./AG/CodeGeneration.ag" #-}
                    _lhsIoffset
-                   {-# LINE 1770 "AG.hs" #-}
+                   {-# LINE 1784 "AG.hs" #-}
                    )
               _eOlabels =
                   ({-# LINE 17 "./AG/CodeGeneration.ag" #-}
                    _lhsIlabels
-                   {-# LINE 1775 "AG.hs" #-}
+                   {-# LINE 1789 "AG.hs" #-}
                    )
               _eOsyms =
                   ({-# LINE 100 "./AG/CodeGeneration.ag" #-}
                    _lhsIsyms
-                   {-# LINE 1780 "AG.hs" #-}
+                   {-# LINE 1794 "AG.hs" #-}
                    )
               ( _eIann,_eIcodes,_eIlabels) =
                   e_ _eOlabels _eOsyms 
@@ -1829,52 +1843,52 @@ sem_Stmts_Cons hd_ tl_  =
               _lhsOcodes =
                   ({-# LINE 139 "./AG/CodeGeneration.ag" #-}
                    _hdIcodes . _tlIcodes
-                   {-# LINE 1833 "AG.hs" #-}
+                   {-# LINE 1847 "AG.hs" #-}
                    )
               _lhsOenv =
                   ({-# LINE 69 "./AG/CodeGeneration.ag" #-}
                    _hdIenv ++ _tlIenv
-                   {-# LINE 1838 "AG.hs" #-}
+                   {-# LINE 1852 "AG.hs" #-}
                    )
               _lhsOlabels =
                   ({-# LINE 18 "./AG/CodeGeneration.ag" #-}
                    _tlIlabels
-                   {-# LINE 1843 "AG.hs" #-}
+                   {-# LINE 1857 "AG.hs" #-}
                    )
               _lhsOoffset =
                   ({-# LINE 39 "./AG/CodeGeneration.ag" #-}
                    _tlIoffset
-                   {-# LINE 1848 "AG.hs" #-}
+                   {-# LINE 1862 "AG.hs" #-}
                    )
               _hdOlabels =
                   ({-# LINE 17 "./AG/CodeGeneration.ag" #-}
                    _lhsIlabels
-                   {-# LINE 1853 "AG.hs" #-}
+                   {-# LINE 1867 "AG.hs" #-}
                    )
               _hdOoffset =
                   ({-# LINE 38 "./AG/CodeGeneration.ag" #-}
                    _lhsIoffset
-                   {-# LINE 1858 "AG.hs" #-}
+                   {-# LINE 1872 "AG.hs" #-}
                    )
               _hdOsyms =
                   ({-# LINE 100 "./AG/CodeGeneration.ag" #-}
                    _lhsIsyms
-                   {-# LINE 1863 "AG.hs" #-}
+                   {-# LINE 1877 "AG.hs" #-}
                    )
               _tlOlabels =
                   ({-# LINE 17 "./AG/CodeGeneration.ag" #-}
                    _hdIlabels
-                   {-# LINE 1868 "AG.hs" #-}
+                   {-# LINE 1882 "AG.hs" #-}
                    )
               _tlOoffset =
                   ({-# LINE 38 "./AG/CodeGeneration.ag" #-}
                    _hdIoffset
-                   {-# LINE 1873 "AG.hs" #-}
+                   {-# LINE 1887 "AG.hs" #-}
                    )
               _tlOsyms =
                   ({-# LINE 100 "./AG/CodeGeneration.ag" #-}
                    _lhsIsyms
-                   {-# LINE 1878 "AG.hs" #-}
+                   {-# LINE 1892 "AG.hs" #-}
                    )
               ( _hdIcodes,_hdIenv,_hdIlabels,_hdIoffset) =
                   hd_ _hdOlabels _hdOoffset _hdOsyms 
@@ -1893,21 +1907,21 @@ sem_Stmts_Nil  =
               _lhsOcodes =
                   ({-# LINE 139 "./AG/CodeGeneration.ag" #-}
                    id
-                   {-# LINE 1897 "AG.hs" #-}
+                   {-# LINE 1911 "AG.hs" #-}
                    )
               _lhsOenv =
                   ({-# LINE 69 "./AG/CodeGeneration.ag" #-}
                    []
-                   {-# LINE 1902 "AG.hs" #-}
+                   {-# LINE 1916 "AG.hs" #-}
                    )
               _lhsOlabels =
                   ({-# LINE 18 "./AG/CodeGeneration.ag" #-}
                    _lhsIlabels
-                   {-# LINE 1907 "AG.hs" #-}
+                   {-# LINE 1921 "AG.hs" #-}
                    )
               _lhsOoffset =
                   ({-# LINE 39 "./AG/CodeGeneration.ag" #-}
                    _lhsIoffset
-                   {-# LINE 1912 "AG.hs" #-}
+                   {-# LINE 1926 "AG.hs" #-}
                    )
           in  ( _lhsOcodes,_lhsOenv,_lhsOlabels,_lhsOoffset)))
