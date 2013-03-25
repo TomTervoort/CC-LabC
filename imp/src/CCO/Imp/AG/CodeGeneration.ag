@@ -244,9 +244,8 @@ setGlobal x (env : envs) = case lookup x (vars env) of
 call :: Ident -> Syms -> CodeS
 call f (local : global) = case lookup f (funs local) of
   Nothing             -> ldl (- 2) . callGlobal f global
-  Just (F beginLabel) -> -- loadSLCache local global .
-                          ldr MP . ldcL beginLabel . jsr 
-                           -- . unloadSLCache local global
+  Just (F beginLabel) -> ldr MP . ldcL beginLabel . jsr 
+                          
 
 -- | Produces code for calling a global function.
 callGlobal :: Ident -> Syms -> CodeS
@@ -266,15 +265,16 @@ return_ (local : global) =
   ret
   
 loadSLCache :: Syms -> CodeS
-loadSLCache (local : global) = ldc 0x424242 . ldc 0x424242
-                               -- . composeList [getGlobal id global | id <- cacheVars local global]
-                                . annote SP 0 0 "red" "loadSLCache"
+loadSLCache (local : global) = let getters = [{-- ldc 0x424242 . --} get id global | id <- cacheVars local global]
+                                in composeList getters
+                                    . if null getters 
+                                       then id
+                                       else annote SP (-(length getters {-- * 2 --}) + 1) 0 "red" "SLCache"
 	   
 unloadSLCache :: Syms -> CodeS
 unloadSLCache (local : global) = sts (-slSize)
                                  . ajs (-slSize + 1)
-                                 . annote SP 0 0 "red" "unloadSLCache" 
- where slSize = 2 -- length (cacheVars local global)
+ where slSize = length (cacheVars local global) -- * 2
 
 cacheVars :: Env -> Syms -> [Ident]
 cacheVars local global = concatMap (map (filter isRequired . fst) . vars) global
