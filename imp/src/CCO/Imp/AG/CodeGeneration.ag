@@ -157,8 +157,10 @@ sem Decl | FunDecl  lhs.codes = bra @loc.endLabel .
                                 label @loc.endLabel
 
 sem Stmt | Assign  lhs.codes = @e.codes . set @x @lhs.syms
-         | Call_   lhs.codes = @es.codes .
+         | Call_   lhs.codes = loadSLCache @lhs.syms .
+                               @es.codes .
                                call @f @lhs.syms .
+                               unloadSLCache @lhs.syms .
                                ajs (- 1)
          | Print   lhs.codes = @e.codes . trap 0
          | Return  lhs.codes = @e.codes . return_ @lhs.syms
@@ -177,7 +179,7 @@ sem Exp | Int     lhs.codes = ldc @n . @annote
         | False_  lhs.codes = ldc 0 . @annote
         | True_   lhs.codes = ldc 1 . @annote
         | Var     lhs.codes = get @x @lhs.syms . @annote
-        | Call    lhs.codes = @es.codes . call @f @lhs.syms
+        | Call    lhs.codes = loadSLCache @lhs.syms . @es.codes . call @f @lhs.syms . unloadSLCache @lhs.syms
         | Add     lhs.codes = @e1.codes . @e2.codes . add . @annote
         | Sub     lhs.codes = @e1.codes . @e2.codes . sub . @annote
         | Mul     lhs.codes = @e1.codes . @e2.codes . mul . @annote
@@ -242,14 +244,16 @@ setGlobal x (env : envs) = case lookup x (vars env) of
 call :: Ident -> Syms -> CodeS
 call f (local : global) = case lookup f (funs local) of
   Nothing             -> ldl (- 2) . callGlobal f global
-  Just (F beginLabel) -> loadSLCache local global . ldr MP . ldcL beginLabel . jsr
+  Just (F beginLabel) -> -- loadSLCache local global .
+                          ldr MP . ldcL beginLabel . jsr 
+                           -- . unloadSLCache local global
 
 -- | Produces code for calling a global function.
 callGlobal :: Ident -> Syms -> CodeS
 callGlobal f []           = error ("unknown function: " ++ f)
 callGlobal f (env : envs) = case lookup f (funs env) of
   Nothing             -> lda (- 2) . callGlobal f envs
-  Just (F beginLabel) -> {-- loadSLCache env envs . --} ldcL beginLabel . jsr
+  Just (F beginLabel) -> ldcL beginLabel . jsr
 
 -- | Produces code for returning from a function.
 return_ :: Syms -> CodeS
@@ -257,20 +261,20 @@ return_ (local : global) =
   sts (- (length (vars local) + 3)) .
   ldrr SP MP .
   str MP .
-  unloadSLCache local global .
   sts (- length (params local)) .
   ajs (- (length (params local) - 1)) .
   ret
   
-loadSLCache :: Env -> Syms -> CodeS
-loadSLCache local global = annote SP 0 0 "red" "loadSLCache"
-                            . ldc 0x424242
-                            . composeList [getGlobal id global | id <- cacheVars local global]
+loadSLCache :: Syms -> CodeS
+loadSLCache (local : global) = ldc 0x424242 . ldc 0x424242
+                               -- . composeList [getGlobal id global | id <- cacheVars local global]
+                                . annote SP 0 0 "red" "loadSLCache"
 	   
-unloadSLCache :: Env -> Syms -> CodeS
-unloadSLCache local global = id {-- annote SP 0 0 "red" "unloadSLCache" 
-                              . ajs (- length (cacheVars local global))
-                              . ajs (-1) --}
+unloadSLCache :: Syms -> CodeS
+unloadSLCache (local : global) = sts (-slSize)
+                                 . ajs (-slSize + 1)
+                                 . annote SP 0 0 "red" "unloadSLCache" 
+ where slSize = 2 -- length (cacheVars local global)
 
 cacheVars :: Env -> Syms -> [Ident]
 cacheVars local global = concatMap (map (filter isRequired . fst) . vars) global
