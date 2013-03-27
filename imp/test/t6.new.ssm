@@ -1,0 +1,179 @@
+    bra L1
+L0:
+    ldr MP
+    ldrr MP SP
+    annote MP -4 -4 green "x (param)"
+    annote MP -3 -3 green "y (param)"
+    bra L3
+L2:
+    ldr MP
+    ldrr MP SP
+    ldl -2
+    lda -2
+    lda 1
+    annote SP 0 0 green "count"
+    ldc 1
+    annote SP 0 0 green "1"
+    add
+    annote SP 0 0 green "count+1"
+    ldl -2
+    lda -2
+    sta 1
+    ldl -2
+    lda -3
+    annote SP 0 0 green "y"
+    ldc 0
+    annote SP 0 0 green "0"
+    eq
+    annote SP 0 0 green "y==0"
+    brf L4
+    ajs 0
+    bra L5
+L4:
+    ldl -2
+    lda -4
+    annote SP 0 0 green "x"
+    ldl -2
+    lda -3
+    annote SP 0 0 green "y"
+    gt
+    annote SP 0 0 green "x>y"
+    brf L6
+    ldl -2
+    lda -4
+    annote SP 0 0 green "x"
+    ldl -2
+    lda -3
+    annote SP 0 0 green "y"
+    sub
+    annote SP 0 0 green "x-y"
+    ldl -2
+    sta -4
+    ldl -2
+    ldl -2
+    lda -2
+    annote SP -1 0 red "SLCache"
+    ldl -2
+    ldc L2
+    jsr
+    ajs -3
+    lds 3
+    ajs -1
+    ajs 0
+    bra L7
+L6:
+    ldl -2
+    lda -3
+    annote SP 0 0 green "y"
+    ldl -2
+    lda -4
+    annote SP 0 0 green "x"
+    sub
+    annote SP 0 0 green "y-x"
+    ldl -2
+    sta -3
+    ldl -2
+    ldl -2
+    lda -2
+    annote SP -1 0 red "SLCache"
+    ldl -2
+    ldc L2
+    jsr
+    ajs -3
+    lds 3
+    ajs -1
+    ajs 0
+L7:
+    nop
+L5:
+    ajs 0
+    ldc 0
+    sts -3
+    ldrr SP MP
+    str MP
+    sts 0
+    ajs 1
+    ret
+L3:
+    ldl -4
+    annote SP 0 0 green "x"
+    ldc 0
+    annote SP 0 0 green "0"
+    eq
+    annote SP 0 0 green "x==0"
+    brf L8
+    ldl -3
+    annote SP 0 0 green "y"
+    sts -5
+    ldrr SP MP
+    str MP
+    sts -2
+    ajs -1
+    ret
+    ajs 0
+    bra L9
+L8:
+    ldl -2
+    annote SP 0 0 red "SLCache"
+    ldr MP
+    ldc L2
+    jsr
+    ajs -2
+    lds 2
+    ajs -1
+    ldl -4
+    annote SP 0 0 green "x"
+    sts -5
+    ldrr SP MP
+    str MP
+    sts -2
+    ajs -1
+    ret
+    ajs 0
+L9:
+    ajs 0
+    ldc 0
+    sts -5
+    ldrr SP MP
+    str MP
+    sts -2
+    ajs -1
+    ret
+L1:
+    bra L11
+L10:
+    ldr MP
+    ldrr MP SP
+    ldc 0
+    annote SP 0 0 green "r (var)"
+    ldl -2
+    annote SP 0 0 red "SLCache"
+    ldc 42
+    annote SP 0 0 green "42"
+    ldc 56
+    annote SP 0 0 green "56"
+    ldl -2
+    ldc L0
+    jsr
+    ajs -2
+    lds 2
+    stl 1
+    ldl 1
+    annote SP 0 0 green "r"
+    trap 0
+    ajs -1
+    ldc 0
+    sts -3
+    ldrr SP MP
+    str MP
+    sts 0
+    ajs 1
+    ret
+L11:
+    ldc 0
+    annote SP 0 0 green "count (var)"
+    ldr MP
+    ldc L10
+    jsr
+    ajs -1
+    ajs -1

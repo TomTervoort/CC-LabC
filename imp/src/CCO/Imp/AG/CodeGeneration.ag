@@ -239,15 +239,8 @@ getLink x (local : global) = case lookup x (vars local) of
 -- | Produces code for retrieving the value of a variable.
 get :: Ident -> Syms -> CodeS
 get x (local : global) = case lookup x (vars local) of
-  Nothing         -> getCached x (local:global) -- ldl (- 2) . getGlobal x global
+  Nothing         -> getCached x (local:global)
   Just (V offset) -> ldl offset
-
--- | Produces code for retrieving the value of a global variable.
-getGlobal :: Ident -> Syms -> CodeS
-getGlobal x []           = error ("unknown variable: " ++ x)
-getGlobal x (env : envs) = case lookup x (vars env) of
-  Nothing         -> lda (- 2) . getGlobal x envs
-  Just (V offset) -> lda offset
 
 -- | Generalizes over getCached and setCached. Provide code that either loads or stores a variable
 --   at a given offset from the address on the stack.
@@ -270,15 +263,8 @@ setCached = withCached sta
 -- | Produces code for assigning a new value to a variable.
 set :: Ident -> Syms -> CodeS
 set x (local : global) = case lookup x (vars local) of
-  Nothing         -> setCached x (local:global) -- ldl (- 2) . setGlobal x global
+  Nothing         -> setCached x (local:global)
   Just (V offset) -> stl offset
-
--- | Produces code for assigning a new value to a global variable.
-setGlobal :: Ident -> Syms -> CodeS
-setGlobal x []           = error ("unknown variable: " ++ x)
-setGlobal x (env : envs) = case lookup x (vars env) of
-  Nothing         -> lda (- 2) . setGlobal x envs
-  Just (V offset) -> sta offset
 
 -- | Produces code for calling a function.
 call :: Ident -> Syms -> CodeS
@@ -331,6 +317,8 @@ unloadSLCache :: Int -> CodeS
 unloadSLCache size = ajs (-1 - size)
                       . lds (size + 1)
 
+-- | Based on local and global environments, this gives a list of non-local variables that may be 
+--   used and should therefore be accessible through the static link cache.
 cacheVars :: Env -> Syms -> [Ident]
 cacheVars local global = concatMap (map (filter isRequired . fst) . vars) global
  where isRequired _ = True

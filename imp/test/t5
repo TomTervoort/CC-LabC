@@ -1,0 +1,14 @@
+function main ()
+{
+  print f (2, 3) ;
+}
+
+function f (x, y)
+{
+  function g()
+  {
+    return x + 5;
+  }
+
+  return x + y + g();
+}

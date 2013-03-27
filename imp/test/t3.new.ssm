@@ -1,0 +1,79 @@
+    bra L1
+L0:
+    ldr MP
+    ldrr MP SP
+    ldc 3
+    annote SP 0 0 green "3"
+    ldl -2
+    ldc L2
+    jsr
+    ajs -1
+    lds 1
+    trap 0
+    ajs 0
+    ldc 0
+    sts -3
+    ldrr SP MP
+    str MP
+    sts 0
+    ajs 1
+    ret
+L1:
+    bra L3
+L2:
+    ldr MP
+    ldrr MP SP
+    annote MP -3 -3 green "x (param)"
+    ldl -3
+    annote SP 0 0 green "x"
+    ldc 1
+    annote SP 0 0 green "1"
+    gt
+    annote SP 0 0 green "x>1"
+    brf L4
+    ldl -3
+    annote SP 0 0 green "x"
+    ldl -3
+    annote SP 0 0 green "x"
+    ldc 1
+    annote SP 0 0 green "1"
+    sub
+    annote SP 0 0 green "x-1"
+    ldl -2
+    ldc L2
+    jsr
+    ajs -1
+    lds 1
+    mul
+    annote SP 0 0 green "x*fac(x-1)"
+    sts -4
+    ldrr SP MP
+    str MP
+    sts -1
+    ajs 0
+    ret
+    bra L5
+L4:
+    ldc 1
+    annote SP 0 0 green "1"
+    sts -4
+    ldrr SP MP
+    str MP
+    sts -1
+    ajs 0
+    ret
+L5:
+    ajs 0
+    ldc 0
+    sts -4
+    ldrr SP MP
+    str MP
+    sts -1
+    ajs 0
+    ret
+L3:
+    ldr MP
+    ldc L0
+    jsr
+    ajs -1
+    ajs 0

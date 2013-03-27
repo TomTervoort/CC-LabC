@@ -1,0 +1,161 @@
+    bra L1
+L0:
+    ldr MP
+    ldrr MP SP
+    ldc 2
+    annote SP 0 0 green "2"
+    ldc 3
+    annote SP 0 0 green "3"
+    ldl -2
+    ldc L2
+    jsr
+    ajs -1
+    lds 1
+    trap 0
+    ajs 0
+    ldc 0
+    sts -3
+    ldrr SP MP
+    str MP
+    sts 0
+    ajs 1
+    ret
+L1:
+    bra L3
+L2:
+    ldr MP
+    ldrr MP SP
+    annote MP -4 -4 green "x (param)"
+    annote MP -3 -3 green "y (param)"
+    ldc 0
+    annote SP 0 0 green "z (var)"
+    bra L5
+L4:
+    ldr MP
+    ldrr MP SP
+    annote MP -4 -4 green "a (param)"
+    annote MP -3 -3 green "b (param)"
+    ldc 0
+    annote SP 0 0 green "c (var)"
+    bra L7
+L6:
+    ldr MP
+    ldrr MP SP
+    annote MP -4 -4 green "p (param)"
+    annote MP -3 -3 green "q (param)"
+    ldc 0
+    annote SP 0 0 green "s (var)"
+    ldc 6
+    annote SP 0 0 green "6"
+    stl 1
+    ldl -2
+    lda -2
+    lda -4
+    annote SP 0 0 green "x"
+    ldl -2
+    lda -2
+    lda -3
+    annote SP 0 0 green "y"
+    add
+    annote SP 0 0 green "x+y"
+    ldl -2
+    lda -2
+    lda 1
+    annote SP 0 0 green "z"
+    add
+    annote SP 0 0 green "x+y+z"
+    ldl -2
+    lda -4
+    annote SP 0 0 green "a"
+    add
+    annote SP 0 0 green "x+y+z+a"
+    ldl -2
+    lda 1
+    annote SP 0 0 green "c"
+    add
+    annote SP 0 0 green "x+y+z+a+c"
+    ldl -4
+    annote SP 0 0 green "p"
+    add
+    annote SP 0 0 green "x+y+z+a+c+p"
+    ldl 1
+    annote SP 0 0 green "s"
+    add
+    annote SP 0 0 green "x+y+z+a+c+p+s"
+    sts -6
+    ldrr SP MP
+    str MP
+    sts -2
+    ajs -1
+    ret
+    ajs -1
+    ldc 0
+    sts -5
+    ldrr SP MP
+    str MP
+    sts -2
+    ajs -1
+    ret
+L7:
+    ldc 5
+    annote SP 0 0 green "5"
+    stl 1
+    ldl -2
+    annote SP 0 0 red "SLCache"
+    ldl -2
+    lda -4
+    annote SP 0 0 green "x"
+    ldl -3
+    annote SP 0 0 green "b"
+    ldr MP
+    ldc L6
+    jsr
+    ajs -2
+    lds 2
+    sts -6
+    ldrr SP MP
+    str MP
+    sts -2
+    ajs -1
+    ret
+    ajs -1
+    ldc 0
+    sts -5
+    ldrr SP MP
+    str MP
+    sts -2
+    ajs -1
+    ret
+L5:
+    ldc 4
+    annote SP 0 0 green "4"
+    stl 1
+    ldl -4
+    annote SP 0 0 green "x"
+    ldl 1
+    annote SP 0 0 green "z"
+    ldr MP
+    ldc L4
+    jsr
+    ajs -1
+    lds 1
+    sts -6
+    ldrr SP MP
+    str MP
+    sts -2
+    ajs -1
+    ret
+    ajs -1
+    ldc 0
+    sts -5
+    ldrr SP MP
+    str MP
+    sts -2
+    ajs -1
+    ret
+L3:
+    ldr MP
+    ldc L0
+    jsr
+    ajs -1
+    ajs 0
