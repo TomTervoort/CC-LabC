@@ -43,12 +43,13 @@ instance Tree Prog where
 
 instance Tree Decl where
   fromTree (VarDecl x)      = App "VarDecl" [fromTree x]
-  fromTree (FunDecl f xs b) =
+  fromTree (FunDecl f xs b _) =
     App "FunDecl" [fromTree f, fromTree xs, fromTree b]  
 
   toTree = parseTree [ app "VarDecl" (VarDecl <$> arg                )
-                     , app "FunDecl" (FunDecl <$> arg <*> arg <*> arg)
+                     , app "FunDecl" (fd <$> arg <*> arg <*> arg)
                      ]
+					 where fd index xs b = FunDecl index xs b b
 
 instance Tree Stmt where
   fromTree Empty            = App "Empty"   []
