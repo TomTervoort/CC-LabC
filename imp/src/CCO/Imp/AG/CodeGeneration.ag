@@ -2,7 +2,11 @@ imports
 {
 import CCO.Ssm hiding (Add, Sub, Mul, Div, Eq, Lt, Gt)
 import Prelude hiding (div)
-import Data.List (intersperse, findIndex)
+
+import Data.Maybe
+import Control.Arrow
+import Data.List
+import Data.Ord
 
 import Debug.Trace
 }
@@ -157,10 +161,9 @@ sem Decl | FunDecl  lhs.codes = bra @loc.endLabel .
                                 label @loc.endLabel
 
 sem Stmt | Assign  lhs.codes = @e.codes . set @x @lhs.syms
-         | Call_   lhs.codes = loadSLCache @lhs.syms .    -- Prepare static-link cache.
-                               @es.codes .
-                               call @f @lhs.syms .
-                               unwindSLCache @lhs.syms .  -- Now unwind it.
+         | Call_   lhs.codes = wrapSLCacheLoader @lhs.syms -- Use SL cache.
+                                (@es.codes .
+                                 call @f @lhs.syms) .
                                ajs (- 1)
          | Print   lhs.codes = @e.codes . trap 0
          | Return  lhs.codes = @e.codes . return_ @lhs.syms
@@ -179,9 +182,9 @@ sem Exp | Int     lhs.codes = ldc @n . @annote
         | False_  lhs.codes = ldc 0 . @annote
         | True_   lhs.codes = ldc 1 . @annote
         | Var     lhs.codes = get @x @lhs.syms . @annote
-        | Call    lhs.codes = loadSLCache @lhs.syms              -- Prepare static-link cache.
-                                . @es.codes . call @f @lhs.syms 
-                                . unwindSLCache @lhs.syms        -- Unwind.
+        | Call    lhs.codes = wrapSLCacheLoader @lhs.syms  -- Use SL cache.            
+                               (@es.codes . 
+                                call @f @lhs.syms)
         | Add     lhs.codes = @e1.codes . @e2.codes . add . @annote
         | Sub     lhs.codes = @e1.codes . @e2.codes . sub . @annote
         | Mul     lhs.codes = @e1.codes . @e2.codes . mul . @annote
@@ -200,7 +203,14 @@ sem Prog | TopLevelDecls  lhs.code = Code (@loc.codes [])
 -------------------------------------------------------------------------------
 
 {
+-- | Reversed function application operator. Useful in combination with arrow notation: this can
+--   be used to 'feed' an argument to a couple of functions combined with >>>.
+(<<$) :: a -> (a -> b) -> b
+(<<$) x f = f x
 
+infixr 0 <<$
+
+-- | Folds function composition over a list. Useful foir sequencing CodeS.
 composeList :: [a -> a] -> a -> a
 composeList = foldr (.) id
 
@@ -216,10 +226,21 @@ enter env = composeList [ldc 0 . annote SP 0 0 "green" (x ++ " (var)") | (x, V _
 exit :: Env -> CodeS
 exit env = ajs (- length (vars env))
 
+-- | If a variable is to be retrieved through a static link, this will produce code retrieving the
+--   link address, along with the number of scopes that had to be walked in order to find the SL.
+getLink :: Ident -> Syms -> Maybe (CodeS, Int)
+getLink x (local : global) = case lookup x (vars local) of
+                              Nothing -> Just $ first (ldl (-2) .) $ getLink' global
+                              Just _  -> Nothing
+ where getLink' (env : envs) = case lookup x (vars env) of
+                                Nothing -> let (c, i) = getLink' envs
+                                            in (lda (-2) . c, i + 1)
+                                Just _  -> (id, 0)
+
 -- | Produces code for retrieving the value of a variable.
 get :: Ident -> Syms -> CodeS
 get x (local : global) = case lookup x (vars local) of
-  Nothing         -> ldl (- 2) . getGlobal x global -- TODO: getCached x (local:global)
+  Nothing         -> {-- trap 1 . getCached x (local:global) --} ldl (- 2) . getGlobal x global
   Just (V offset) -> ldl offset
 
 -- | Produces code for retrieving the value of a global variable.
@@ -229,15 +250,11 @@ getGlobal x (env : envs) = case lookup x (vars env) of
   Nothing         -> lda (- 2) . getGlobal x envs
   Just (V offset) -> lda offset
 
--- | Fetches the value of a global variable from the static-link cache. -- FIXME
+-- | Fetches the value of a global variable through the static-link cache. 
 getCached :: Ident -> Syms -> CodeS
-getCached x []           = error $ "Unknown variable: " ++ x
-getCached x (env : envs) = case findIndex (== x) $ reverse $ cacheVars env envs of
-                            Nothing  -> error $ "Unknown variable: " ++ x -- getGlobal x envs
-                            Just off -> ldl (- length env - off)
+getCached x = undefined
 
--- | Sets a global variable value in the static-link cache. When unwinding, the actual global will 
---   be eventually updated. -- TODO
+-- | Sets a global variable value through the static-link cache. 
 setCached :: Ident -> Syms -> CodeS
 setCached = undefined
 
@@ -277,25 +294,33 @@ return_ (local : global) =
   sts (- length (params local)) .
   ajs (- (length (params local) - 1)) .
   ret
-  
--- | Loads the values of the variables neccessary for the static link cache.  
-loadSLCache :: Syms -> CodeS
-loadSLCache (local : global) = composeList getters
-                               . if null getters 
-                                  then id
-                                  else annote SP (-(length getters) + 1) 0 "red" "SLCache"
- where getters = [get id global | id <- cacheVars local global]
 
--- | Writes the contents of the static link cache, which should end one above the current SP, back
---   to the corresponding variables. After having popped the cache, the value the SP pointed to 
---   before is restored.
-unwindSLCache :: Syms -> CodeS
-unwindSLCache (local : global) = ajs (-1)
-                                 . composeList setters
-                                 . lds (slSize + 1)
-                                 . annote SP 0 0 "cyan" "returned"
- where slSize = length (cacheVars local global)
-       setters = [set id global | id <- reverse $ cacheVars local global]
+-- | Preprends a SL cache loader and appends an unloader around some instructions.
+wrapSLCacheLoader :: Syms -> CodeS -> CodeS
+wrapSLCacheLoader env code = loadSLCache env
+                               <<$ first (. code) 
+                               >>> second unloadSLCache 
+                               >>> uncurry (.)
+  
+-- | Provides code for loading the static links that are neccessary for allowing fast access to all 
+--   relevant variables. Also returns the size of the static link cache.
+loadSLCache :: Syms -> (CodeS, Int)
+loadSLCache (local : global) | null getters = (id, 0)
+                             | otherwise = (composeList getters
+                                            . annote SP (-(length getters) + 1) 0 "red" "SLCache"
+                                            , length getters)
+ where getters :: [CodeS]
+       getters = [getLink ident (local:global) | ident <- cacheVars local global] 
+                  <<$ catMaybes 
+                  >>> sortBy (comparing snd) 
+                  >>> nubBy (\(_,i1) (_,i2) -> i1 == i2)
+                  >>> map fst
+
+-- | Given a static link cache size. Pop its contents, which should end one above the current SP. 
+--   Afterwards, the value the SP pointed to is restored.
+unloadSLCache :: Int -> CodeS
+unloadSLCache size = ajs (-1 - size)
+                      . lds (size + 1)
 
 cacheVars :: Env -> Syms -> [Ident]
 cacheVars local global = concatMap (map (filter isRequired . fst) . vars) global
