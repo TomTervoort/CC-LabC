@@ -204,10 +204,9 @@ sem Prog | TopLevelDecls  lhs.code = Code (@loc.codes [])
 
 {
 -- | Reversed function application operator. Useful in combination with arrow notation: this can
---   be used to 'feed' an argument to a couple of functions combined with >>>.
+--   be used to 'feed' an argument to multiple functions combined with >>>.
 (<<$) :: a -> (a -> b) -> b
 (<<$) x f = f x
-
 infixr 0 <<$
 
 -- | Folds function composition over a list. Useful foir sequencing CodeS.
@@ -240,7 +239,7 @@ getLink x (local : global) = case lookup x (vars local) of
 -- | Produces code for retrieving the value of a variable.
 get :: Ident -> Syms -> CodeS
 get x (local : global) = case lookup x (vars local) of
-  Nothing         -> {-- trap 1 . getCached x (local:global) --} ldl (- 2) . getGlobal x global
+  Nothing         -> getCached x (local:global) -- ldl (- 2) . getGlobal x global
   Just (V offset) -> ldl offset
 
 -- | Produces code for retrieving the value of a global variable.
@@ -250,18 +249,28 @@ getGlobal x (env : envs) = case lookup x (vars env) of
   Nothing         -> lda (- 2) . getGlobal x envs
   Just (V offset) -> lda offset
 
+-- | Generalizes over getCached and setCached. Provide code that either loads or stores a variable
+--   at a given offset from the address on the stack.
+withCached :: (Int -> CodeS) -> Ident -> Syms -> CodeS 
+withCached op x envs = case getLink x envs of
+                        Nothing           -> error ("unknown variable: " ++ x)
+                        Just (getLink, _) -> getLink . op offset 
+ where offset = case lookup x $ concatMap vars envs of
+                 Just (V off) -> off
+                 _            -> error ("unknown variable: " ++ x)
+
 -- | Fetches the value of a global variable through the static-link cache. 
 getCached :: Ident -> Syms -> CodeS
-getCached x = undefined
+getCached = withCached lda
 
 -- | Sets a global variable value through the static-link cache. 
 setCached :: Ident -> Syms -> CodeS
-setCached = undefined
+setCached = withCached sta
 
 -- | Produces code for assigning a new value to a variable.
 set :: Ident -> Syms -> CodeS
 set x (local : global) = case lookup x (vars local) of
-  Nothing         -> ldl (- 2) . setGlobal x global
+  Nothing         -> setCached x (local:global) -- ldl (- 2) . setGlobal x global
   Just (V offset) -> stl offset
 
 -- | Produces code for assigning a new value to a global variable.

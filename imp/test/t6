@@ -1,0 +1,40 @@
+var count;
+
+function gcd(x,y)
+{
+    function loop()
+    {
+        count = count + 1;
+        if( y == 0)
+        {
+
+        }
+        else if(x > y)
+        {
+            x = x - y;
+            loop();
+        }
+        else
+        {
+            y = y - x;
+            loop();
+        }
+    }
+
+    if(x == 0)
+    {
+        return y;
+    }
+    else
+    {
+        loop();
+        return x;
+    }
+}
+
+function main()
+{
+    var r;
+    r = gcd(42,56);
+    print r;
+}
