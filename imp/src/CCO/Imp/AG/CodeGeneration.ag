@@ -20,7 +20,7 @@ import Debug.Trace
 attr Decl Decls Stmt Stmts Exp Exps
   inh labels :: {[Label]}
   syn labels :: {[Label]}
-
+  
 sem Prog | TopLevelDecls  ds .labels = [0 ..]
 
 sem Decl | FunDecl        loc.beginLabel = @lhs.labels !! 0
@@ -58,11 +58,11 @@ type Env = [(Ident, Sym)]
 -- | A symbol descriptor either describes a variable or a function symbol.
 -- For a variable, we store its offset relative to the mark pointer; for
 -- a function we store its begin label.
-data Sym = V Int | F Int
+data Sym = V Int | F Int Stmts
 
 -- | Restrict environments to a particular type of descriptor.
 vars   env = [entry | entry@(_, V _     ) <- env            ]
-funs   env = [entry | entry@(_, F _     ) <- env            ]
+funs   env = [entry | entry@(_, F _ _   ) <- env            ]
 params env = [entry | entry@(_, V offset) <- env, offset < 0]
 }
 
@@ -73,7 +73,7 @@ attr Decl Decls Stmt Stmts
   syn env use {++} {[]} :: {Env}
 
 sem Decl | VarDecl  lhs.env = [(@x, V @lhs.offset    )]
-         | FunDecl  lhs.env = [(@f, F @loc.beginLabel)]
+         | FunDecl  lhs.env = [(@f, (F @loc.beginLabel @c))]
 
 sem Stmt | Block  lhs.env = []
 
@@ -284,7 +284,7 @@ setGlobal x (env : envs) = case lookup x (vars env) of
 call :: Ident -> Syms -> CodeS
 call f (local : global) = case lookup f (funs local) of
   Nothing             -> ldl (- 2) . callGlobal f global
-  Just (F beginLabel) -> ldr MP . ldcL beginLabel . jsr 
+  Just (F beginLabel _) -> ldr MP . ldcL beginLabel . jsr 
                           
 
 -- | Produces code for calling a global function.
@@ -292,7 +292,7 @@ callGlobal :: Ident -> Syms -> CodeS
 callGlobal f []           = error ("unknown function: " ++ f)
 callGlobal f (env : envs) = case lookup f (funs env) of
   Nothing             -> lda (- 2) . callGlobal f envs
-  Just (F beginLabel) -> ldcL beginLabel . jsr
+  Just (F beginLabel _) -> ldcL beginLabel . jsr
 
 -- | Produces code for returning from a function.
 return_ :: Syms -> CodeS
@@ -333,6 +333,35 @@ unloadSLCache size = ajs (-1 - size)
 
 cacheVars :: Env -> Syms -> [Ident]
 cacheVars local global = concatMap (map (filter isRequired . fst) . vars) global
- where isRequired _ = True
+ where --isRequired :: Ident -> Bool
+       isRequired ident = True-- stmtsUsesIdent ident (getFunStmtsFromLocal (local : global))
+       declUsesIdent :: Ident -> Decl -> Bool
+       declUsesIdent i f@(FunDecl name xs stmts _) = stmtsUsesIdent i stmts
+       declUsesIdent i _ = False
+       stmtsUsesIdent :: Ident -> [Stmt] -> Bool
+       stmtsUsesIdent i l = any (stmtUsesIdent i) l
+       stmtUsesIdent :: Ident -> Stmt -> Bool
+       stmtUsesIdent i (Assign x expr) = exprUsesIdent i expr
+       stmtUsesIdent i (Call_ f exprs) = exprsUsesIdent i exprs
+       stmtUsesIdent i (Print expr) = exprUsesIdent i expr
+       stmtUsesIdent i (Return expr) = exprUsesIdent i expr
+       stmtUsesIdent i (If expr s1 s2) = (exprUsesIdent i expr) || (stmtUsesIdent i s1) || (stmtUsesIdent i s2)
+       stmtUsesIdent i (Block stmts) = stmtsUsesIdent i stmts 
+       stmtUsesIdent i _ = False
+       exprsUsesIdent :: Ident -> [Exp] -> Bool
+       exprsUsesIdent i l = any (exprUsesIdent i) l
+       exprUsesIdent :: Ident -> Exp -> Bool
+       exprUsesIdent i (Var i2) = i == i2 
+       exprUsesIdent i (Call f exps) = exprsUsesIdent i exps
+       exprUsesIdent i (Add e1 e2) = (exprUsesIdent i e1) || (exprUsesIdent i e2)
+       exprUsesIdent i (Sub e1 e2) = (exprUsesIdent i e1) || (exprUsesIdent i e2)
+       exprUsesIdent i (Mul e1 e2) = (exprUsesIdent i e1) || (exprUsesIdent i e2)
+       exprUsesIdent i (Div e1 e2) = (exprUsesIdent i e1) || (exprUsesIdent i e2)
+       exprUsesIdent i (Lt e1 e2) = (exprUsesIdent i e1) || (exprUsesIdent i e2)
+       exprUsesIdent i (Eq e1 e2) = (exprUsesIdent i e1) || (exprUsesIdent i e2)
+       exprUsesIdent i (Gt e1 e2) = (exprUsesIdent i e1) || (exprUsesIdent i e2)
+       exprUsesIdent i _ = False
 
+--getFunStmtsFromLocal :: [Env] -> [Stmt]
+getFunStmtsFromSyms = [] -- TODO
 }

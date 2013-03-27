@@ -46,10 +46,11 @@ pProg = TopLevelDecls <$> pDecls
 -- | Parses a 'Decl'.
 pDecl :: TokenParser Decl
 pDecl = VarDecl <$ keyword "var" <*> ident <* spec ';'
-    <|> FunDecl <$ keyword "function" <*> ident <*
+    <|> fh <$ keyword "function" <*> ident <*
                    spec '(' <*> manySepBy (spec ',') ident <* spec ')' <*> 
                    pStmts
     <!> "declaration"
+	 where fh ident xs b = FunDecl ident xs b b
 
 -- | Parses a 'Stmt'.
 pStmt :: TokenParser Stmt

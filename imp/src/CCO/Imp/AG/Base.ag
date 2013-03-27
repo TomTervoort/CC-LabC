@@ -11,7 +11,7 @@ data Prog
 
 data Decl
   | VarDecl  x :: {Ident}
-  | FunDecl  f :: {Ident}  xs :: {[Ident]}  b :: Stmts
+  | FunDecl  f :: {Ident}  xs :: {[Ident]}  b :: Stmts  c :: { Stmts }
 
 data Stmt
   | Empty
